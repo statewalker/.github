@@ -1,0 +1,93 @@
+name: CI
+
+# The CI every statewalker monorepo runs. A repository calls it from its own
+# .github/workflows/ci.yml:
+#
+#   jobs:
+#     ci:
+#       uses: statewalker/.github/.github/workflows/ci.yml@main
+#
+# Steps, in order: frozen install, the dependency-reference convention, lint,
+# format, build, typecheck (after the build: packages resolve each other through
+# `exports` that point at dist/), tests, then the publishing checks on the built
+# packages (export targets exist, dist imports are declared dependencies, packed
+# manifests carry no workspace:/catalog: specifiers). Root scripts that a
+# repository does not define are skipped.
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: Node.js version.
+        type: string
+        default: "24"
+      setup:
+        description: Shell commands to run after the build and before the tests (browsers, services, ...).
+        type: string
+        default: ""
+      test-command:
+        description: The test command.
+        type: string
+        default: pnpm run test
+      checks-ref:
+        description: The ref of statewalker/.github to take the check scripts from.
+        type: string
+        default: main
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check scripts
+        uses: actions/checkout@v5
+        with:
+          repository: statewalker/.github
+          ref: ${{ inputs.checks-ref }}
+          path: .statewalker-ci
+
+      # Out of the repository, so linting and packing never see them.
+      - name: Move the check scripts out of the workspace
+        run: mv .statewalker-ci "$RUNNER_TEMP/statewalker-ci"
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Dependency references
+        run: node "$RUNNER_TEMP/statewalker-ci/scripts/check-conventions.mjs"
+
+      - name: Lint
+        run: pnpm run --if-present lint:check
+
+      - name: Format
+        run: pnpm run --if-present format:check
+
+      - name: Build
+        run: pnpm run --if-present build
+
+      - name: Typecheck
+        run: pnpm run --if-present typecheck
+
+      - name: Setup for tests
+        if: inputs.setup != ''
+        run: ${{ inputs.setup }}
+
+      - name: Test
+        run: ${{ inputs.test-command }}
+
+      - name: Export targets
+        run: node "$RUNNER_TEMP/statewalker-ci/scripts/check-exports.mjs"
+
+      - name: Dist imports
+        run: node "$RUNNER_TEMP/statewalker-ci/scripts/check-dist-imports.mjs"
+
+      - name: Packed manifests
+        run: node "$RUNNER_TEMP/statewalker-ci/scripts/check-pack.mjs"
