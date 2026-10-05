@@ -1,0 +1,101 @@
+name: Release
+
+# Releases a statewalker monorepo's public packages to npm with changesets. A repository calls it
+# from its .github/workflows/ci.yml, after the CI job, on pushes to main:
+#
+#   jobs:
+#     ci:
+#       uses: statewalker/.github/.github/workflows/ci.yml@main
+#     release:
+#       needs: ci
+#       if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+#       uses: statewalker/.github/.github/workflows/release.yml@main
+#       permissions:
+#         contents: write
+#         pull-requests: write
+#         id-token: write
+#       secrets: inherit
+#
+# 1. Build, then write the changesets nobody wrote by hand (scripts/release-changesets.mjs):
+#    a patch for every package whose packed files or published manifest differ from npm's
+#    `latest`, a minor (0.x) / major when a dependency moved to another breaking line.
+# 2. changesets/action: with pending changesets, open or update the "Version Packages" pull
+#    request; once that is merged, publish every package whose version is not on npm yet.
+#
+# npm authentication: trusted publishing (OIDC) when the package has a trusted publisher for
+# <repository>/ci.yml on npmjs.com, otherwise the NPM_TOKEN secret. Either way npm attaches a
+# provenance attestation.
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: Node.js version.
+        type: string
+        default: "24"
+      checks-ref:
+        description: The ref of statewalker/.github to take the release scripts from.
+        type: string
+        default: main
+    secrets:
+      NPM_TOKEN:
+        description: An npm token allowed to publish the packages; not needed with trusted publishing.
+        required: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-${{ github.repository }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Release scripts
+        uses: actions/checkout@v5
+        with:
+          repository: statewalker/.github
+          ref: ${{ inputs.checks-ref }}
+          path: .statewalker-ci
+
+      - name: Move the release scripts out of the workspace
+        run: mv .statewalker-ci "$RUNNER_TEMP/statewalker-ci"
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      # Trusted publishing needs npm 11.5.1 or later.
+      - name: npm
+        run: npm install --global npm@^11.6.0 && npm --version
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm run --if-present build
+
+      - name: Changesets for unreleased changes
+        run: node "$RUNNER_TEMP/statewalker-ci/scripts/release-changesets.mjs"
+
+      - name: Version pull request or publish
+        uses: changesets/action@v1
+        with:
+          version: pnpm exec changeset version
+          publish: pnpm exec changeset publish
+          commit: "chore: version packages"
+          title: "chore: version packages"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: "true"
