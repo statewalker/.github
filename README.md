@@ -102,6 +102,35 @@ Either:
 - **`NPM_TOKEN`**: an npm granular access token with read and write access to the `@statewalker`
   packages, as an organization secret (or a repository secret).
 
+## Static sites on httpeers.net
+
+`publish-site.yml` publishes a built static site to `<domain>` (any name under `httpeers.net`): it
+copies the files into the `sites` bucket at `s3.httpeers.net` under the prefix `<domain>`, where the
+sites host serves them at once. Wildcard DNS and certificates cover every `*.httpeers.net` name.
+
+```yaml
+jobs:
+  site:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    uses: statewalker/.github/.github/workflows/publish-site.yml@main
+    with:
+      domain: demo.httpeers.net
+      build: pnpm --filter @statewalker/demo build
+      path: apps/demo/dist
+    secrets: inherit
+```
+
+- Files other than HTML go first, the HTML pages after them, and files the new build no longer has
+  are removed last (`delete: false` keeps them). A page never names a file that is not there yet.
+- A pull request preview is the same call with `domain: pr-${{ github.event.number }}-demo.httpeers.net`,
+  and `remove: true` in a workflow on `pull_request: types: [closed]` deletes it.
+- Secrets `SITES_S3_ACCESS_KEY_ID` and `SITES_S3_SECRET_ACCESS_KEY`: an S3 key of the rustfs
+  storage with write access to the `sites` bucket (organization or repository secrets). Pull
+  requests from forks get no secrets, so they get no preview.
+- The job fails when `https://<domain>/` does not answer 2xx/3xx within 30 seconds after publishing:
+  a site without an `index.html` at its root needs a `.site/config.json` that serves something
+  there.
+
 ## Dependency updates
 
 `default.json` is the [Renovate](https://docs.renovatebot.com) preset; repositories extend it with

@@ -1,0 +1,133 @@
+name: Publish site
+
+# Publishes a built static site to <domain> on httpeers.net: the files go to the `sites` bucket
+# (s3.httpeers.net) under the prefix <domain>, and the sites host serves them from there at once.
+# *.httpeers.net has a wildcard DNS record and certificate, so a new name needs nothing else.
+#
+#   jobs:
+#     site:
+#       uses: statewalker/.github/.github/workflows/publish-site.yml@main
+#       with:
+#         domain: demo.httpeers.net
+#         build: pnpm --filter @statewalker/demo build
+#         path: apps/demo/dist
+#       secrets: inherit
+#
+# Order, because visitors are mid-flight: every file but HTML first, then the HTML pages that
+# name them, then (unless `delete: false`) the removal of files the new build no longer has. A
+# published page therefore never points at a file that is not there yet.
+#
+# `remove: true` deletes the whole prefix instead (a pull request preview that was closed).
+
+on:
+  workflow_call:
+    inputs:
+      domain:
+        description: The site's host name, e.g. demo.httpeers.net or pr-12-demo.httpeers.net.
+        type: string
+        required: true
+      path:
+        description: The directory to publish, relative to the repository root (after `build`).
+        type: string
+        default: dist
+      build:
+        description: Shell commands that build the site after `pnpm install` (none when empty).
+        type: string
+        default: ""
+      delete:
+        description: Remove files under the prefix that the new build does not have.
+        type: boolean
+        default: true
+      remove:
+        description: Delete the site (the whole prefix) instead of publishing.
+        type: boolean
+        default: false
+      node-version:
+        type: string
+        default: "24"
+      endpoint:
+        description: The S3 endpoint of the sites bucket.
+        type: string
+        default: https://s3.httpeers.net
+      bucket:
+        type: string
+        default: sites
+    secrets:
+      SITES_S3_ACCESS_KEY_ID:
+        required: true
+      SITES_S3_SECRET_ACCESS_KEY:
+        required: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: site-${{ inputs.domain }}
+      cancel-in-progress: false
+    env:
+      DOMAIN: ${{ inputs.domain }}
+      SITE_PATH: ${{ inputs.path }}
+      BUCKET: ${{ inputs.bucket }}
+      RCLONE_CONFIG_SITES_TYPE: s3
+      RCLONE_CONFIG_SITES_PROVIDER: Other
+      RCLONE_CONFIG_SITES_ENDPOINT: ${{ inputs.endpoint }}
+      RCLONE_CONFIG_SITES_ACCESS_KEY_ID: ${{ secrets.SITES_S3_ACCESS_KEY_ID }}
+      RCLONE_CONFIG_SITES_SECRET_ACCESS_KEY: ${{ secrets.SITES_S3_SECRET_ACCESS_KEY }}
+      RCLONE_CONFIG_SITES_FORCE_PATH_STYLE: "true"
+    steps:
+      # The domain becomes a bucket prefix: a malformed one could write over another site.
+      - name: Check the domain
+        run: |
+          printf '%s' "$DOMAIN" | grep -Eq '^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$' \
+            || { echo "not a host name: $DOMAIN"; exit 1; }
+
+      - name: rclone
+        run: |
+          curl -fsSL https://rclone.org/install.sh | sudo bash >/dev/null
+          rclone version | head -1
+
+      - name: Remove the site
+        if: inputs.remove
+        run: |
+          rclone purge "sites:$BUCKET/$DOMAIN" || echo "nothing at $DOMAIN"
+          echo "removed https://$DOMAIN/"
+
+      - if: ${{ !inputs.remove }}
+        uses: actions/checkout@v5
+
+      - if: ${{ !inputs.remove && inputs.build != '' }}
+        uses: pnpm/action-setup@v4
+
+      - if: ${{ !inputs.remove && inputs.build != '' }}
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: pnpm
+
+      - name: Build
+        if: ${{ !inputs.remove && inputs.build != '' }}
+        run: |
+          pnpm install --frozen-lockfile
+          ${{ inputs.build }}
+
+      - name: Publish
+        if: ${{ !inputs.remove }}
+        run: |
+          set -euo pipefail
+          [ -d "$SITE_PATH" ] || { echo "no directory $SITE_PATH"; exit 1; }
+          target="sites:$BUCKET/$DOMAIN"
+          rclone copy "$SITE_PATH" "$target" --checksum --exclude '*.html'
+          rclone copy "$SITE_PATH" "$target" --checksum --include '*.html'
+          if [ "${{ inputs.delete }}" = "true" ]; then rclone sync "$SITE_PATH" "$target" --checksum; fi
+          echo "published https://$DOMAIN/"
+
+      - name: Check the site answers
+        if: ${{ !inputs.remove }}
+        run: |
+          for _ in $(seq 1 10); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "https://$DOMAIN/" || true)
+            case "$code" in 2*|3*) echo "https://$DOMAIN/ -> HTTP $code"; exit 0;; esac
+            sleep 3
+          done
+          echo "https://$DOMAIN/ answered HTTP ${code:-nothing}"
+          exit 1
