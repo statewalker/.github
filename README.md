@@ -80,6 +80,11 @@ node ../.github/scripts/check-conventions.mjs
    packages"** pull request (versions, `CHANGELOG.md`). Merging that pull request publishes every
    package whose version is not on npm yet, with provenance, and creates the GitHub releases.
 
+A repository releasing this way has `@changesets/cli` 3 as a root dev dependency and a
+`.changeset/config.json` with `"access": "public"`, `"baseBranch": "main"` and
+`"privatePackages": { "version": false, "tag": false }` (applications are not versioned). The
+repository's *Settings → Actions → General* must allow GitHub Actions to create pull requests.
+
 Run the planning step locally (after `pnpm build`) to see what the next release holds:
 
 ```sh

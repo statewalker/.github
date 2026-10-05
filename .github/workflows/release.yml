@@ -19,7 +19,7 @@ name: Release
 # 1. Build, then write the changesets nobody wrote by hand (scripts/release-changesets.mjs):
 #    a patch for every package whose packed files or published manifest differ from npm's
 #    `latest`, a minor (0.x) / major when a dependency moved to another breaking line.
-# 2. changesets/action: with pending changesets, open or update the "Version Packages" pull
+# 2. changesets/action (v2, for @changesets/cli 3): with pending changesets, open or update the "Version Packages" pull
 #    request; once that is merged, publish every package whose version is not on npm yet.
 #
 # npm authentication: trusted publishing (OIDC) when the package has a trusted publisher for
@@ -89,13 +89,12 @@ jobs:
         run: node "$RUNNER_TEMP/statewalker-ci/scripts/release-changesets.mjs"
 
       - name: Version pull request or publish
-        uses: changesets/action@v1
+        uses: changesets/action@v2
         with:
-          version: pnpm exec changeset version
-          publish: pnpm exec changeset publish
-          commit: "chore: version packages"
-          title: "chore: version packages"
+          version-script: pnpm exec changeset version
+          publish-script: pnpm exec changeset publish
+          commit-message: "chore: version packages"
+          pr-title: "chore: version packages"
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: "true"
