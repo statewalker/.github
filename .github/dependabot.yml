@@ -1,0 +1,13 @@
+# Dependabot version updates: weekly pull requests, checked by CI and merged by hand.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Paris
+    groups:
+      actions:
+        patterns: ["*"]
