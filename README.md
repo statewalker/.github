@@ -1,6 +1,6 @@
 # statewalker/.github
 
-Shared CI, releases and dependency updates for the statewalker monorepos.
+Shared CI for the statewalker monorepos, the release-planning script, and site publishing.
 
 ## Use
 
@@ -15,27 +15,10 @@ on:
 jobs:
   ci:
     uses: statewalker/.github/.github/workflows/ci.yml@main
-  release:
-    needs: ci
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    uses: statewalker/.github/.github/workflows/release.yml@main
-    permissions:
-      contents: write
-      pull-requests: write
-      id-token: write
-    secrets: inherit
 ```
 
-and its `renovate.json`:
-
-```json
-{
-  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>statewalker/.github"]
-}
-```
-
-A repository without public packages leaves out the `release` job.
+Dependency updates come from Dependabot: each repository has its own `.github/dependabot.yml`
+(see "Dependency updates come from Dependabot" below).
 
 Inputs: `node-version` (default `24`), `setup` (shell commands run before the tests, e.g. installing
 browsers), `test-command` (default `pnpm run test`), `checks-ref` (the ref of this repository to take
@@ -63,44 +46,31 @@ The scripts are plain Node (no dependencies) and run locally too, from a reposit
 node ../.github/scripts/check-conventions.mjs
 ```
 
-## Releases
+## Releases are made by hand, not by CI
 
-`release.yml` runs after CI on every push to `main`:
+CI never publishes. A maintainer releases from a local checkout, with their own npm login and 2FA,
+so no publishing credential is stored in GitHub. The cost: packages carry no provenance attestation,
+which only a CI-issued identity can sign.
 
-1. **Changesets for unreleased changes** (`scripts/release-changesets.mjs`). Each public package is
-   packed as `pnpm publish` would pack it and compared with npm's `latest`:
-   - a packed file differs (sources, `dist/`, README, ...), or the published manifest does (runtime,
-     peer or optional dependencies, `exports`): **patch**;
-   - a dependency moved to another breaking line (`^0.3` to `^0.4`, `^1` to `^2`): **minor** on 0.x,
-     **major** from 1.0; packages depending on it through `workspace:` get the same bump.
+`scripts/release-changesets.mjs` plans a release. Each public package is packed as `pnpm publish`
+would pack it and compared with npm's `latest`:
 
-   Changesets written by hand take precedence: write one (`pnpm changeset`) to choose the bump or the
-   changelog text. Packages whose version is not on npm yet are left alone.
-2. **changesets/action**: with changesets pending, it opens or updates the **"chore: version
-   packages"** pull request (versions, `CHANGELOG.md`). Merging that pull request publishes every
-   package whose version is not on npm yet, with provenance, and creates the GitHub releases.
+- a packed file differs (sources, `dist/`, README, ...), or the published manifest does (runtime,
+  peer or optional dependencies, `exports`): **patch**;
+- a dependency moved to another breaking line (`^0.3` to `^0.4`, `^1` to `^2`): **minor** on 0.x,
+  **major** from 1.0; packages depending on it through `workspace:` get the same bump.
 
-A repository releasing this way has `@changesets/cli` 3 as a root dev dependency and a
-`.changeset/config.json` with `"access": "public"`, `"baseBranch": "main"` and
-`"privatePackages": { "version": false, "tag": false }` (applications are not versioned). The
-repository's *Settings → Actions → General* must allow GitHub Actions to create pull requests.
-
-Run the planning step locally (after `pnpm build`) to see what the next release holds:
+It writes a changeset for each, next to any written by hand (`pnpm changeset`), which take
+precedence. Packages whose version is not on npm yet are left alone. After `pnpm build`, a dry run
+shows what the next release holds:
 
 ```sh
 node ../.github/scripts/release-changesets.mjs --dry-run
 ```
 
-### npm authentication
-
-Either:
-
-- **Trusted publishing** (preferred, no secret): on npmjs.com, each package's *Settings → Trusted
-  publishing* names GitHub Actions, the repository, and the workflow file **`ci.yml`** (the calling
-  workflow, not this one). With npm 11.15 or later it can be scripted, one 2FA prompt per package:
-  `npm trust github <package> --repo statewalker/<repo> --file ci.yml --allow-publish --yes`.
-- **`NPM_TOKEN`**: an npm granular access token with read and write access to the `@statewalker`
-  packages, as an organization secret (or a repository secret).
+A releasing repository has `@changesets/cli` 3 as a root dev dependency and a
+`.changeset/config.json` with `"access": "public"`, `"baseBranch": "main"` and
+`"privatePackages": { "version": false, "tag": false }` (applications are not versioned).
 
 ## Static sites on httpeers.net
 
@@ -131,21 +101,19 @@ jobs:
   a site without an `index.html` at its root needs a `.site/config.json` that serves something
   there.
 
-## Dependency updates
+## Dependency updates come from Dependabot
 
-`default.json` is the [Renovate](https://docs.renovatebot.com) preset; repositories extend it with
-`"github>statewalker/.github"`. It needs the Renovate GitHub app installed on the organization.
+Each repository has a `.github/dependabot.yml` (this repository's covers its GitHub Actions only):
 
-- Ranges stay as they are while new versions fit them (`rangeStrategy: update-lockfile`): only the
-  lockfile changes, and nothing needs releasing. Updates outside a range (a major, a 0.x minor) rewrite
-  the range in the catalog.
-- **`@statewalker/*`**: one pull request as soon as a version is published, merged when CI passes.
-  Merged, it changes the published manifests, so the release job prepares a release of the dependent
-  packages: a release in a library repository moves up, repository by repository, to the
-  applications.
-- Third-party updates within the ranges: one weekly pull request (Monday morning, Paris time),
-  merged when CI passes, for versions at least 3 days old.
-- Third-party majors, and any update of a third-party package still on 0.x: one pull request each,
-  merged by hand.
-- GitHub Actions: grouped, merged when CI passes. The lockfile is refreshed monthly.
-- pnpm, Node and `@types/node` majors move by hand, in all repositories at once.
+- **Weekly**, Monday 06:00 Paris time, for npm (pnpm catalogs included) and GitHub Actions.
+- **Ranges stay while new versions fit them** (`versioning-strategy: increase-if-necessary`): only
+  the lockfile changes. A version outside a range (a major, or a minor below 1.0) rewrites it.
+- **Versions younger than 3 days are skipped** (`cooldown`), so a broken release has time to be
+  pulled before it reaches a pull request.
+- **Grouped**: one pull request for `@statewalker/*`, one for third-party minor and patch updates;
+  majors come one per pull request. Every pull request runs CI and is merged by hand.
+- **`@statewalker/*` updates are normally made locally**, right after a release, so the Dependabot
+  group only catches what was missed.
+
+Dependabot alerts and security-fix pull requests are enabled on every repository, independently of
+this file.
