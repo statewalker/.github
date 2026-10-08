@@ -38,10 +38,10 @@ jobs:
   ci:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Check scripts
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           repository: statewalker/.github
           ref: ${{ inputs.checks-ref }}
@@ -51,9 +51,9 @@ jobs:
       - name: Move the check scripts out of the workspace
         run: mv .statewalker-ci "$RUNNER_TEMP/statewalker-ci"
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ inputs.node-version }}
           cache: pnpm
