@@ -89,7 +89,7 @@ jobs:
       - name: Remove the site
         if: inputs.remove
         run: |
-          rclone purge "sites:$BUCKET/$DOMAIN" || echo "nothing at $DOMAIN"
+          rclone purge "sites:$BUCKET/$DOMAIN/" || echo "nothing at $DOMAIN"
           echo "removed https://$DOMAIN/"
 
       - if: ${{ !inputs.remove }}
@@ -115,7 +115,10 @@ jobs:
         run: |
           set -euo pipefail
           [ -d "$SITE_PATH" ] || { echo "no directory $SITE_PATH"; exit 1; }
-          target="sites:$BUCKET/$DOMAIN"
+          # The trailing slash names the prefix as a folder. Without it rclone first HEADs the key
+          # <domain> to see whether it is a file, and a 200 there (a stray object of that name, or
+          # a server answering HEAD on a prefix) stops it with "is a file not a directory".
+          target="sites:$BUCKET/$DOMAIN/"
           rclone copy "$SITE_PATH" "$target" --checksum --exclude '*.html'
           rclone copy "$SITE_PATH" "$target" --checksum --include '*.html'
           if [ "${{ inputs.delete }}" = "true" ]; then rclone sync "$SITE_PATH" "$target" --checksum; fi
