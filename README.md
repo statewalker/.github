@@ -207,6 +207,25 @@ project's `.github/workflows/ci.yml`, after a "version packages" pull request
 which a human publishes once (trusted publishing needs the package to exist on npm; §4 there). The
 release-path check above (`release-path: true`) fails a publish step anywhere else in CI.
 
+### The version pull request is opened with the release App's token
+
+The `version` job opens the "chore: version packages" pull request with an installation token of
+the organization's `statewalker-release` GitHub App (Contents and Pull requests: read & write),
+minted by `actions/create-github-app-token` and passed to `changesets/action` as `github-token`.
+With the default `GITHUB_TOKEN`, GitHub does not run CI on the pull request: the run waits as
+"action_required" until a maintainer approves it, so the merge gate and a required status check
+have nothing to read. webrun-files' `.github/workflows/ci.yml` is the reference to copy.
+
+A repository that starts releasing needs, besides the copied jobs:
+
+1. the App installed on it (organization Settings → GitHub Apps → `statewalker-release` →
+   Configure → Repository access);
+2. access to the organization variable `RELEASE_APP_CLIENT_ID` and secret `RELEASE_APP_KEY`
+   (organization Settings → Secrets and variables → Actions → each one → Repository access).
+
+Without either, the `Release token` step fails and no version pull
+request is opened; nothing is published, since `pack` and `publish` wait for it.
+
 `scripts/release-changesets.mjs` plans a release. Each public package is packed as `pnpm publish`
 would pack it and compared with npm's `latest`:
 
