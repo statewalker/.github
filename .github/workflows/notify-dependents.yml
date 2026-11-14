@@ -1,0 +1,62 @@
+name: Notify dependents
+
+# After a publish: tells the other repositories of the statewalker-release GitHub App's
+# installation that new versions are on npm (a `statewalker-published` repository_dispatch), so
+# each one runs statewalker-update.yml and moves its lockfile within its ranges. A publishing
+# repository calls it as a job after `publish` in its ci.yml:
+#
+#   notify:
+#     needs: publish
+#     if: ${{ !cancelled() && needs.publish.outputs.published != '' }}
+#     uses: statewalker/statewalker-ci/.github/workflows/notify-dependents.yml@main
+#     with:
+#       packages: ${{ needs.publish.outputs.published }}
+#     secrets: inherit
+#
+# No long-lived token: the job mints an installation token of the App (client id in the
+# organization variable RELEASE_APP_CLIENT_ID, private key in the organization secret
+# RELEASE_APP_KEY), with Contents: write only, and it is revoked when the job ends.
+
+on:
+  workflow_call:
+    inputs:
+      packages:
+        description: What was published, space-separated name@version.
+        type: string
+        required: true
+      checks-ref:
+        description: The ref of statewalker/statewalker-ci to take the script from.
+        type: string
+        default: main
+    secrets:
+      RELEASE_APP_KEY:
+        required: true
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Script
+        uses: actions/checkout@v7
+        with:
+          repository: statewalker/statewalker-ci
+          ref: ${{ inputs.checks-ref }}
+          path: .statewalker-ci
+          persist-credentials: false
+
+      # No `repositories`: the token covers every repository the App is installed on.
+      - name: Dispatch token
+        id: token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_KEY }}
+          owner: ${{ github.repository_owner }}
+          permission-contents: write
+
+      - name: Notify
+        env:
+          GITHUB_TOKEN: ${{ steps.token.outputs.token }}
+          PACKAGES: ${{ inputs.packages }}
+        run: node .statewalker-ci/scripts/notify-dependents.mjs --packages "$PACKAGES"

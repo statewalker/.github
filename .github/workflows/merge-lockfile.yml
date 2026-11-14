@@ -1,0 +1,83 @@
+name: Merge lockfile
+
+# Merges the lockfile-only pull request that statewalker-update.yml opens, once every other check
+# on its head commit passes: the merge gate for that kind of pull request
+# (statewalker/statewalker-root docs/process/merging.md, "Lockfile-only pull requests"). It
+# verifies the pull request is still that one (opened by the statewalker-release App from
+# deps/statewalker-lockfile, labelled deps:lockfile, changing pnpm-lock.yaml alone), posts the
+# record and squash-merges with the App's token, so CI runs on main after it. A failing check
+# leaves the pull request open with a comment. A repository calls it from its ci.yml:
+#
+#   lockfile:
+#     needs: ci
+#     # !cancelled(): also after a failed `ci`, so the pull request gets a comment saying why.
+#     if: ${{ !cancelled() && github.event_name == 'pull_request' && github.head_ref == 'deps/statewalker-lockfile' }}
+#     permissions:
+#       contents: read
+#       pull-requests: read
+#       checks: read
+#       statuses: read
+#       actions: read
+#     uses: statewalker/statewalker-ci/.github/workflows/merge-lockfile.yml@main
+#     secrets: inherit
+
+on:
+  workflow_call:
+    inputs:
+      branch:
+        type: string
+        default: deps/statewalker-lockfile
+      label:
+        type: string
+        default: deps:lockfile
+      timeout-minutes:
+        description: How long to wait for the other checks (at most 80; the job stops at 90).
+        type: number
+        default: 60
+      checks-ref:
+        description: The ref of statewalker/statewalker-ci to take the script from.
+        type: string
+        default: main
+    secrets:
+      RELEASE_APP_KEY:
+        required: true
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+      statuses: read
+      actions: read
+    steps:
+      - name: Script
+        uses: actions/checkout@v7
+        with:
+          repository: statewalker/statewalker-ci
+          ref: ${{ inputs.checks-ref }}
+          path: .statewalker-ci
+          persist-credentials: false
+
+      - name: Token
+        id: token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Merge when green
+        env:
+          GITHUB_TOKEN: ${{ steps.token.outputs.token }}
+          CHECKS_TOKEN: ${{ github.token }}
+          AUTHOR: ${{ steps.token.outputs.app-slug }}[bot]
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+          BRANCH: ${{ inputs.branch }}
+          LABEL: ${{ inputs.label }}
+          TIMEOUT: ${{ inputs.timeout-minutes }}
+        run: node .statewalker-ci/scripts/lockfile-pr.mjs merge --pr "$PR" --sha "$SHA" --branch "$BRANCH" --label "$LABEL" --author "$AUTHOR" --timeout "$TIMEOUT"
