@@ -10,7 +10,8 @@ name: Merge lockfile
 #
 #   lockfile:
 #     needs: ci
-#     if: github.event_name == 'pull_request' && github.head_ref == 'deps/statewalker-lockfile'
+#     # !cancelled(): also after a failed `ci`, so the pull request gets a comment saying why.
+#     if: ${{ !cancelled() && github.event_name == 'pull_request' && github.head_ref == 'deps/statewalker-lockfile' }}
 #     permissions:
 #       contents: read
 #       pull-requests: read

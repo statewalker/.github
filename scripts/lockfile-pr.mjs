@@ -10,7 +10,8 @@
 //   node lockfile-pr.mjs open --branch <b> --label <l> --author <login> [--source <text>]
 //     In a checkout whose pnpm-lock.yaml was replaced by the updated one: commits it on <b>
 //     (from the default branch), pushes it and opens the pull request, labelled <l>, or updates
-//     the one already open. Pushes nothing when <b> already holds the same lockfile.
+//     the one already open. Pushes nothing when <b> already holds the same lockfile, and refuses
+//     to overwrite <b> when it changes anything besides the lockfile (someone pushed work there).
 //
 //   node lockfile-pr.mjs merge --pr <n> --sha <sha> --branch <b> --label <l> --author <login>
 //     [--timeout <minutes>]
@@ -106,6 +107,13 @@ async function open() {
   const remote = git("ls-remote", "origin", `refs/heads/${args.branch}`);
   let same = false;
   if (remote) {
+    // A session may have pushed a fix to the branch despite merging.md: never force-push it away.
+    const compare = await gh.call("GET", `/repos/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(args.branch)}`);
+    const foreign = (compare.files ?? []).map((f) => f.filename).filter((f) => f !== LOCKFILE);
+    if (foreign.length) {
+      console.error(`lockfile-pr: ${args.branch} also changes ${foreign.join(", ")}; not overwriting it. Move that work to a branch of its own (statewalker-root docs/process/merging.md, "Lockfile-only pull requests").`);
+      process.exit(1);
+    }
     git("fetch", "--depth=1", "origin", `refs/heads/${args.branch}`);
     same = git("rev-parse", "FETCH_HEAD^{tree}") === git("rev-parse", "HEAD^{tree}");
   }

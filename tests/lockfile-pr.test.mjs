@@ -110,6 +110,7 @@ function openRoutes(state) {
   return {
     [`GET ${BASE}`]: { default_branch: "main" },
     [`GET /users/${BOT}`]: { id: 42, login: BOT },
+    [`GET ${BASE}/compare/main...${BRANCH}`]: () => ({ files: state.compare ?? [{ filename: "pnpm-lock.yaml" }] }),
     [`GET ${BASE}/pulls`]: () => state.prs,
     [`POST ${BASE}/pulls`]: (q) => {
       const pr = { number: 7, html_url: "https://github.com/statewalker/example/pull/7", ...q.json };
@@ -292,6 +293,26 @@ test("merge: a newer head commit is left to its own run", async () => {
     assert.equal(r.code, 0, r.out);
     assert.match(r.out, /newer commit/);
     assert.equal(api.writes().length, 0);
+  } finally {
+    await api.close();
+  }
+});
+
+test("open: never overwrites the branch when someone pushed more than the lockfile to it", async () => {
+  const { origin, work } = repo();
+  fs.writeFileSync(path.join(work, "pnpm-lock.yaml"), lock("0.10.5", "0.10.4"));
+  const state = { prs: [] };
+  const api = await fakeGitHub(openRoutes(state));
+  try {
+    assert.equal((await run(SCRIPT, openArgs, { cwd: work, env: env(api) })).code, 0);
+    const pushed = git(origin, "rev-parse", BRANCH);
+    state.compare = [{ filename: "pnpm-lock.yaml" }, { filename: "src/fix.ts" }];
+    git(work, "checkout", "-q", "main");
+    fs.writeFileSync(path.join(work, "pnpm-lock.yaml"), lock("0.10.6", "0.10.4"));
+    const r = await run(SCRIPT, openArgs, { cwd: work, env: env(api) });
+    assert.equal(r.code, 1, r.out);
+    assert.match(r.out, /also changes src\/fix\.ts; not overwriting it/);
+    assert.equal(git(origin, "rev-parse", BRANCH), pushed);
   } finally {
     await api.close();
   }
