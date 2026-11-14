@@ -6,7 +6,7 @@ name: Publish site
 #
 #   jobs:
 #     site:
-#       uses: statewalker/.github/.github/workflows/publish-site.yml@main
+#       uses: statewalker/statewalker-ci/.github/workflows/publish-site.yml@main
 #       with:
 #         domain: demo.httpeers.net
 #         build: pnpm --filter @statewalker/demo build

@@ -5,7 +5,7 @@ on:
   pull_request:
 jobs:
   ci:
-    uses: statewalker/.github/.github/workflows/ci.yml@main
+    uses: statewalker/statewalker-ci/.github/workflows/ci.yml@main
   publish:
     needs: ci
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'

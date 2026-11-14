@@ -5,7 +5,7 @@ name: CI
 #
 #   jobs:
 #     ci:
-#       uses: statewalker/.github/.github/workflows/ci.yml@main
+#       uses: statewalker/statewalker-ci/.github/workflows/ci.yml@main
 #
 # Steps, in order: frozen install, the dependency-reference convention, lint,
 # format, build, typecheck (after the build: packages resolve each other through
@@ -34,7 +34,7 @@ on:
         type: string
         default: pnpm run test
       checks-ref:
-        description: The ref of statewalker/.github to take the check scripts from.
+        description: The ref of statewalker/statewalker-ci to take the check scripts from.
         type: string
         default: main
       baseline:
@@ -81,7 +81,7 @@ jobs:
       - name: Check scripts
         uses: actions/checkout@v7
         with:
-          repository: statewalker/.github
+          repository: statewalker/statewalker-ci
           ref: ${{ inputs.checks-ref }}
           path: .statewalker-ci
 
@@ -111,7 +111,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # publint, attw, TypeScript for the API diff, yaml for the release path: pinned by the
-      # lockfile of statewalker/.github.
+      # lockfile of statewalker/statewalker-ci.
       - name: Install the check tools
         if: inputs.package-checks || inputs.api-diff || inputs.release-path
         run: pnpm install --frozen-lockfile --dir "$RUNNER_TEMP/statewalker-ci"

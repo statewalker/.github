@@ -1,4 +1,4 @@
-# statewalker/.github
+# statewalker/statewalker-ci
 
 Shared CI for the statewalker monorepos, the nightly browser and end-to-end suites, the
 release-planning script, and site publishing.
@@ -15,7 +15,7 @@ on:
   pull_request:
 jobs:
   ci:
-    uses: statewalker/.github/.github/workflows/ci.yml@main
+    uses: statewalker/statewalker-ci/.github/workflows/ci.yml@main
 ```
 
 Dependency updates come from Dependabot: each repository has its own `.github/dependabot.yml`
@@ -51,7 +51,7 @@ With `baseline: library` or `baseline: app`, a missing check fails CI instead of
 ```yaml
 jobs:
   ci:
-    uses: statewalker/.github/.github/workflows/ci.yml@main
+    uses: statewalker/statewalker-ci/.github/workflows/ci.yml@main
     with:
       baseline: library
 ```
@@ -163,7 +163,7 @@ permissions:
   issues: write            # for the failure issue
 jobs:
   nightly:
-    uses: statewalker/.github/.github/workflows/nightly.yml@main
+    uses: statewalker/statewalker-ci/.github/workflows/nightly.yml@main
     with:
       setup: pnpm exec playwright install --with-deps chromium
 ```
@@ -237,7 +237,7 @@ sites host serves them at once. Wildcard DNS and certificates cover every `*.htt
 jobs:
   site:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    uses: statewalker/.github/.github/workflows/publish-site.yml@main
+    uses: statewalker/statewalker-ci/.github/workflows/publish-site.yml@main
     with:
       domain: demo.httpeers.net
       build: pnpm --filter @statewalker/demo build
