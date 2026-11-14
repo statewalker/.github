@@ -42,3 +42,11 @@ test("a version pull request job, a dry run and a script merely named publish-* 
   const r = check("version-pr-only");
   assert.equal(r.code, 0, r.out);
 });
+
+test("publish commands in other shapes are found too", () => {
+  const r = check("publish-shapes");
+  assert.equal(r.code, 1, r.out);
+  for (const job of ["workspace-root", "workspace-root-script", "captured", "env-prefix", "recursive-exec", "yarn-foreach", "pinned-npm"]) {
+    assert.match(r.out, new RegExp(`job "${job}", step 1`), job);
+  }
+});

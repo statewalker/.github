@@ -1,0 +1,31 @@
+name: Shapes
+on: workflow_dispatch
+jobs:
+  workspace-root:
+    runs-on: ubuntu-latest
+    steps:
+      - run: 'pnpm -w publish'
+  workspace-root-script:
+    runs-on: ubuntu-latest
+    steps:
+      - run: 'pnpm -w release'
+  captured:
+    runs-on: ubuntu-latest
+    steps:
+      - run: 'out=$(npm publish ./a.tgz --json)'
+  env-prefix:
+    runs-on: ubuntu-latest
+    steps:
+      - run: 'NPM_CONFIG_PROVENANCE=true npm publish'
+  recursive-exec:
+    runs-on: ubuntu-latest
+    steps:
+      - run: 'pnpm -r exec npm publish'
+  yarn-foreach:
+    runs-on: ubuntu-latest
+    steps:
+      - run: 'yarn workspaces foreach -A npm publish'
+  pinned-npm:
+    runs-on: ubuntu-latest
+    steps:
+      - run: 'npx npm@11.19.0 publish'

@@ -121,8 +121,10 @@ Two more opt-in switches:
 ```
 
 - **Secret scan** (`scripts/check-secrets.mjs`, `secret-scan: true`): [gitleaks](https://github.com/gitleaks/gitleaks)
-  scans the repository's files right after the checkout, before the install. A finding fails the
-  job; the output redacts the secret. A leaked secret is revoked, not just deleted: it was exposed
+  scans, right after the checkout and before the install, the repository's files and every commit
+  of the pull request (from its base; on a push, from the previous head), so a secret added and
+  deleted again within a pull request fails too. The switch checks out the full history for this
+  (`fetch-depth: 0`). A finding fails the job; the output redacts the secret. A leaked secret is revoked, not just deleted: it was exposed
   once pushed. False positives go in the repository's `.gitleaks.toml` (an allowlist) or
   `.gitleaksignore` (fingerprints from the output). gitleaks is pinned, by version and SHA-256,
   in `scripts/install-gitleaks.sh`. This complements GitHub secret scanning with push protection,
@@ -130,10 +132,13 @@ Two more opt-in switches:
 - **Release path** (`scripts/check-release-path.mjs`, `release-path: true`): fails any publish step
   outside the job `publish` of `.github/workflows/ci.yml`: in another job, another workflow file
   (even one whose job is named `publish`) or a composite action under `.github/actions/`. A publish
-  step is `npm publish`, `pnpm publish` (`pnpm -r publish` included), `yarn publish`, `yarn npm
-  publish`, `bun publish` or `changeset publish` (`pnpm changeset publish`, `npx changeset publish`),
-  a root package.json script reaching one of these through other scripts, `changesets/action` with
-  a `publish` input, or an npm-publish action. `--dry-run` does not count. A version job
+  step is `npm publish`, `pnpm publish`, `yarn publish`, `yarn npm publish`, `bun publish` or
+  `changeset publish`, wherever it sits in a command (`pnpm -r publish`, `pnpm -w publish`,
+  `pnpm -r exec npm publish`, `yarn workspaces foreach -A npm publish`, `npx npm@11 publish`,
+  `pnpm changeset publish`, `out=$(npm publish …)`), a root package.json script reaching one of
+  these through other scripts, `changesets/action` with a `publish` input, or an npm-publish action.
+  `--dry-run` does not count. The check reads commands word by word; it is a guard against
+  mistakes, not a sandbox. A version job
   (`changesets/action` with `version` only) passes.
 
 Locally, from a repository's root: `bash ../.github/scripts/install-gitleaks.sh` prints the
@@ -159,8 +164,9 @@ actionlint checks the workflows.
 Publishing happens only in CI: npm trusted publishing from the standard `publish` job of each
 project's `.github/workflows/ci.yml`, after a "version packages" pull request
 ([decision](https://github.com/statewalker/statewalker-root/issues/10); root's
-`docs/process/README.md` §4). Never publish by hand. The release-path check below fails a publish
-step anywhere else.
+`docs/process/README.md` §4). Never publish by hand, with one exception: a package's first version,
+which a human publishes once (trusted publishing needs the package to exist on npm; §4 there). The
+release-path check above (`release-path: true`) fails a publish step anywhere else in CI.
 
 `scripts/release-changesets.mjs` plans a release. Each public package is packed as `pnpm publish`
 would pack it and compared with npm's `latest`:

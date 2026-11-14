@@ -17,25 +17,46 @@ const env = { GITLEAKS: gitleaks };
 // A fake GitHub token, assembled here so that no token is ever committed to this repository.
 const fakeToken = ["gh", "p_", "R7tY0wB5cD9fH1jK4sU6gE3aZq3vX8kLmN2p"].join("");
 
+const gitIn = (dir) => (...args) =>
+  execFileSync("git", ["-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", ...args], {
+    cwd: dir,
+    encoding: "utf8",
+    stdio: "pipe",
+  }).trim();
+
 /** A copy of the clean fixture as a git repository, with `extra` files committed. */
 function repoWith(extra) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "statewalker-secrets-"));
   fs.cpSync(path.join(repoRoot, "fixtures/secrets/clean"), dir, { recursive: true });
   for (const [file, text] of Object.entries(extra)) fs.writeFileSync(path.join(dir, file), text);
-  const git = (...args) => execFileSync("git", args, { cwd: dir, stdio: "pipe" });
+  const git = gitIn(dir);
   git("init", "-q");
   git("add", "-A");
-  git("-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-q", "-m", "fixture");
+  git("commit", "-q", "-m", "fixture");
   return dir;
 }
 
-function scan(dir) {
+function scan(dir, extraEnv = {}) {
   const res = spawnSync(process.execPath, [path.join(repoRoot, "scripts/check-secrets.mjs")], {
     cwd: dir,
     encoding: "utf8",
-    env: { ...process.env, ...env },
+    env: { ...process.env, ...env, ...extraEnv },
   });
   return { code: res.status, out: `${res.stdout}${res.stderr}` };
+}
+
+/** The clean fixture as a base commit, then a commit adding a token and one deleting it. */
+function addedThenDeleted() {
+  const dir = repoWith({});
+  const git = gitIn(dir);
+  const base = git("rev-parse", "HEAD");
+  fs.writeFileSync(path.join(dir, "src/deploy.ts"), `export const githubToken = "${fakeToken}";\n`);
+  git("add", "-A");
+  git("commit", "-q", "-m", "add a token");
+  fs.rmSync(path.join(dir, "src/deploy.ts"));
+  git("add", "-A");
+  git("commit", "-q", "-m", "delete it again");
+  return { dir, base };
 }
 
 test("a clean repository passes the secret scan", opts, () => {
@@ -48,6 +69,27 @@ test("a committed fake token fails the secret scan, without printing the token",
   assert.equal(r.code, 1, r.out);
   assert.match(r.out, /src\/deploy\.ts/);
   assert.doesNotMatch(r.out, new RegExp(fakeToken));
+});
+
+test("a token added and deleted again within the scanned commits fails, without printing it", opts, () => {
+  const { dir, base } = addedThenDeleted();
+  const r = scan(dir, { SECRET_SCAN_BASE: base });
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /src\/deploy\.ts/);
+  assert.doesNotMatch(r.out, new RegExp(fakeToken));
+});
+
+test("an all-zero base (a new branch pushed) scans the files only", opts, () => {
+  const { dir } = addedThenDeleted();
+  const r = scan(dir, { SECRET_SCAN_BASE: "0".repeat(40) });
+  assert.equal(r.code, 0, r.out);
+});
+
+test("a base outside the fetched history is an error, not a pass", opts, () => {
+  const { dir } = addedThenDeleted();
+  const r = scan(dir, { SECRET_SCAN_BASE: "1".repeat(40) });
+  assert.equal(r.code, 2, r.out);
+  assert.match(r.out, /fetch-depth/);
 });
 
 test("without gitleaks the scan is an error, not a pass", () => {

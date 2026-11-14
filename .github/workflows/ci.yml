@@ -73,7 +73,10 @@ jobs:
   ci:
     runs-on: ubuntu-latest
     steps:
+      # The secret scan reads the commits of the pull request (or push): it needs their history.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: ${{ inputs.secret-scan && '0' || '1' }}
 
       - name: Check scripts
         uses: actions/checkout@v7
@@ -93,6 +96,8 @@ jobs:
 
       - name: Secret scan
         if: inputs.secret-scan
+        env:
+          SECRET_SCAN_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: node "$RUNNER_TEMP/statewalker-ci/scripts/check-secrets.mjs"
 
       - uses: pnpm/action-setup@v6
