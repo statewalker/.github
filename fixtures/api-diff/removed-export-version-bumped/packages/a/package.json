@@ -1,0 +1,18 @@
+{
+  "name": "@fixture/a",
+  "version": "2.0.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./extra": {
+      "types": "./dist/extra.d.ts",
+      "import": "./dist/extra.js"
+    }
+  },
+  "files": [
+    "dist"
+  ]
+}

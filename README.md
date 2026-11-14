@@ -22,7 +22,9 @@ Dependency updates come from Dependabot: each repository has its own `.github/de
 
 Inputs: `node-version` (default `24`), `setup` (shell commands run before the tests, e.g. installing
 browsers), `test-command` (default `pnpm run test`), `checks-ref` (the ref of this repository to take
-the check scripts from), `baseline` (`off`, `library` or `app`: the required baseline below).
+the check scripts from), `baseline` (`off`, `library` or `app`: the required baseline below),
+`package-checks` and `attw-profile` (publint and attw), `api-diff` (the API diff against npm); see
+"Package checks and the API diff" below.
 
 ## What it runs
 
@@ -71,9 +73,46 @@ jobs:
 `baseline` defaults to `off`, today's behaviour, so projects switch it on one by one
 (the `ci-baseline` rollout, `statewalker/statewalker-root#29`).
 
+## Package checks and the API diff
+
+Two more opt-in switches, so projects adopt them one by one (lowest layer first for the API diff):
+
+```yaml
+    with:
+      package-checks: true   # publint and attw
+      api-diff: true         # the public API against npm
+```
+
+- **publint and attw** (`scripts/check-package-tools.mjs`, `package-checks: true`): each public
+  package is packed as `pnpm publish` packs it, then checked by
+  [publint](https://publint.dev) (its errors fail; warnings and suggestions are printed) and
+  [attw](https://github.com/arethetypeswrong/arethetypeswrong.github.io) with the profile
+  `attw-profile` (default `esm-only`, which ignores the CommonJS and node10 resolutions an ESM-only
+  package does not offer; `node16` or `strict` check more).
+- **API diff** (`scripts/check-api-diff.mjs`, `api-diff: true`): each public package's packed type
+  declarations are compared with npm's `latest`, entry point by entry point (`exports`, resolved as
+  a bundler-mode TypeScript consumer resolves them). **Breaking**: an entry point removed or left
+  without types, an export removed, an export that stops being a value or a type, a member removed
+  from an exported class, interface or enum. A breaking change fails unless the pull request
+  declares the bump it needs, **major** from 1.0, **minor** on 0.x, **patch** on 0.0.x (what a caret
+  range lets through), either with a changeset (`.changeset/*.md`, `"@statewalker/x": major`) or
+  with the package.json version already past npm's. Additions are listed and need no bump.
+  Packages not on npm yet are skipped. Changed signatures (a parameter's type, a return type) are
+  not compared: the reviewer judges those.
+
+The tools (publint, attw, and the TypeScript the API diff uses) are pinned in this repository's
+`package.json` and lockfile; the workflow installs them only when a switch is on. Locally:
+`pnpm install` here, then from a repository's root, after its build:
+
+```sh
+node ../.github/scripts/check-package-tools.mjs
+node ../.github/scripts/check-api-diff.mjs
+```
+
 ## Running the checks locally
 
-The scripts are plain Node (no dependencies) and run locally too, from a repository's root:
+The scripts are plain Node and run locally too, from a repository's root (`check-scripts.mjs` uses
+the repository's own TypeScript; the package checks above use this repository's dependencies):
 
 ```sh
 node ../.github/scripts/check-conventions.mjs
