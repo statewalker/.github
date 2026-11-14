@@ -1,0 +1,7 @@
+{
+  "name": "release-path-publish-in-other-workflow",
+  "private": true,
+  "scripts": {
+    "build": "tsc -b"
+  }
+}

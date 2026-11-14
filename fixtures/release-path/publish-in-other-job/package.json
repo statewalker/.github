@@ -1,0 +1,7 @@
+{
+  "name": "release-path-publish-in-other-job",
+  "private": true,
+  "scripts": {
+    "build": "tsc -b"
+  }
+}

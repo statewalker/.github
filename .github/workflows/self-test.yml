@@ -1,7 +1,8 @@
 name: Self-test
 
-# This repository's own CI: the check scripts against the fixture repositories in fixtures/, and a
-# lint of the workflows every statewalker project calls.
+# This repository's own CI: the check scripts against the fixture repositories in fixtures/, the
+# checks that apply to this repository itself, and a lint of the workflows every statewalker
+# project calls.
 
 on:
   push:
@@ -13,6 +14,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks
+        run: bash scripts/install-gitleaks.sh
+      # Before the install, so node_modules is not scanned.
+      - name: Secret scan of this repository
+        env:
+          SECRET_SCAN_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: node scripts/check-secrets.mjs
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
@@ -22,5 +32,7 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Check scripts against the fixtures
         run: pnpm test
+      - name: Release path of this repository
+        run: node scripts/check-release-path.mjs
       - name: Lint the workflows
         run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7 -color

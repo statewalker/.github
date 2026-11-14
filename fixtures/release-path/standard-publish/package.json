@@ -1,0 +1,8 @@
+{
+  "name": "release-path-standard-publish",
+  "private": true,
+  "scripts": {
+    "build": "tsc -b",
+    "release": "pnpm build && changeset publish"
+  }
+}

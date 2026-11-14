@@ -15,7 +15,8 @@ name: CI
 # repository does not define are skipped, unless it opted into the required
 # baseline with the `baseline` input (library or app): then a missing required
 # script, or a test file no typecheck step compiles, fails the job. Opt-in too:
-# publint and attw (`package-checks`) and the API diff against npm (`api-diff`).
+# publint and attw (`package-checks`), the API diff against npm (`api-diff`), the
+# secret scan (`secret-scan`) and the release-path check (`release-path`).
 
 on:
   workflow_call:
@@ -51,6 +52,16 @@ on:
         description: The attw profile, `esm-only` (default), `node16` or `strict`.
         type: string
         default: esm-only
+      secret-scan:
+        description: Scan the repository's files for committed secrets with gitleaks (before the install).
+        type: boolean
+        default: false
+      release-path:
+        description: >-
+          Fail a publish step (npm/pnpm/yarn publish, changeset publish, a script running one,
+          changesets/action with publish) anywhere but the standard `publish` job of ci.yml.
+        type: boolean
+        default: false
       api-diff:
         description: >-
           Compare each public package's API with its version on npm, and fail a breaking change
@@ -62,7 +73,10 @@ jobs:
   ci:
     runs-on: ubuntu-latest
     steps:
+      # The secret scan reads the commits of the pull request (or push): it needs their history.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: ${{ inputs.secret-scan && '0' || '1' }}
 
       - name: Check scripts
         uses: actions/checkout@v7
@@ -75,6 +89,17 @@ jobs:
       - name: Move the check scripts out of the workspace
         run: mv .statewalker-ci "$RUNNER_TEMP/statewalker-ci"
 
+      # Before the install, so only the repository's own files are scanned.
+      - name: Install gitleaks
+        if: inputs.secret-scan
+        run: bash "$RUNNER_TEMP/statewalker-ci/scripts/install-gitleaks.sh"
+
+      - name: Secret scan
+        if: inputs.secret-scan
+        env:
+          SECRET_SCAN_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: node "$RUNNER_TEMP/statewalker-ci/scripts/check-secrets.mjs"
+
       - uses: pnpm/action-setup@v6
 
       - uses: actions/setup-node@v7
@@ -84,6 +109,16 @@ jobs:
 
       - name: Install
         run: pnpm install --frozen-lockfile
+
+      # publint, attw, TypeScript for the API diff, yaml for the release path: pinned by the
+      # lockfile of statewalker/.github.
+      - name: Install the check tools
+        if: inputs.package-checks || inputs.api-diff || inputs.release-path
+        run: pnpm install --frozen-lockfile --dir "$RUNNER_TEMP/statewalker-ci"
+
+      - name: Release path
+        if: inputs.release-path
+        run: node "$RUNNER_TEMP/statewalker-ci/scripts/check-release-path.mjs"
 
       - name: Dependency references
         run: node "$RUNNER_TEMP/statewalker-ci/scripts/check-conventions.mjs"
@@ -126,11 +161,6 @@ jobs:
 
       - name: Packed manifests
         run: node "$RUNNER_TEMP/statewalker-ci/scripts/check-pack.mjs"
-
-      # publint, attw and TypeScript for the API diff: pinned by this repository's lockfile.
-      - name: Install the package check tools
-        if: inputs.package-checks || inputs.api-diff
-        run: pnpm install --frozen-lockfile --dir "$RUNNER_TEMP/statewalker-ci"
 
       - name: publint and attw
         if: inputs.package-checks

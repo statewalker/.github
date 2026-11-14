@@ -1,0 +1,8 @@
+{
+  "name": "release-path-version-pr-only",
+  "private": true,
+  "scripts": {
+    "build": "tsc -b",
+    "publish-docs": "node tools/docs.mjs"
+  }
+}

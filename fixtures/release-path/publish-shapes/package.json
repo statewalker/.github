@@ -1,0 +1,7 @@
+{
+  "name": "release-path-publish-shapes",
+  "private": true,
+  "scripts": {
+    "release": "changeset publish"
+  }
+}

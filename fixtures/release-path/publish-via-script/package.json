@@ -1,0 +1,9 @@
+{
+  "name": "release-path-publish-via-script",
+  "private": true,
+  "scripts": {
+    "build": "tsc -b",
+    "release": "pnpm build && pnpm ship",
+    "ship": "pnpm -r publish --no-git-checks"
+  }
+}

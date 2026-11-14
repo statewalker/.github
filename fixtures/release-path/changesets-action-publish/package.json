@@ -1,0 +1,7 @@
+{
+  "name": "release-path-changesets-action-publish",
+  "private": true,
+  "scripts": {
+    "build": "tsc -b"
+  }
+}
