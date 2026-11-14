@@ -187,7 +187,7 @@ jobs:
 
 
 The scripts are plain Node and run locally too, from a repository's root (`check-scripts.mjs` uses
-the repository's own TypeScript; the package checks above use this repository's dependencies):
+the repository's own TypeScript, version 5 or 7; the package checks above use this repository's dependencies):
 
 ```sh
 node ../.github/scripts/check-conventions.mjs
