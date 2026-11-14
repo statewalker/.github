@@ -1,0 +1,144 @@
+name: Update @statewalker
+
+# Moves a repository's lockfile to the newest `@statewalker/*` versions within the ranges it
+# declares, and opens (or updates) a lockfile-only pull request labelled `deps:lockfile`, which
+# merge-lockfile.yml merges once its checks pass. Ranges, manifests and catalogs never change,
+# so nothing is republished. A version outside a range (a breaking release) does not move the
+# lockfile: a session raises the range (statewalker/statewalker-root docs/process/README.md §3).
+# A repository opts in with .github/workflows/statewalker-update.yml:
+#
+#   name: Update @statewalker
+#   on:
+#     repository_dispatch:
+#       types: [statewalker-published]   # sent by a publisher's notify-dependents.yml
+#     schedule:
+#       - cron: "23 4 * * *"             # catches a missed dispatch
+#     workflow_dispatch:
+#   concurrency:
+#     group: statewalker-update
+#   jobs:
+#     update:
+#       uses: statewalker/statewalker-ci/.github/workflows/statewalker-update.yml@main
+#       secrets: inherit
+#
+# Two jobs, so that no dependency code runs where a write token exists: `update` resolves
+# without credentials (and without install scripts); `propose` commits the resulting lockfile
+# with the statewalker-release App's token, so CI runs on the pull request.
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: Node.js version.
+        type: string
+        default: "24"
+      pattern:
+        description: The dependencies to update.
+        type: string
+        default: "@statewalker/*"
+      branch:
+        description: The pull request's branch.
+        type: string
+        default: deps/statewalker-lockfile
+      label:
+        description: The pull request's label, which merge-lockfile.yml requires.
+        type: string
+        default: deps:lockfile
+      checks-ref:
+        description: The ref of statewalker/statewalker-ci to take the script from.
+        type: string
+        default: main
+    secrets:
+      RELEASE_APP_KEY:
+        required: true
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      changed: ${{ steps.check.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Script
+        uses: actions/checkout@v7
+        with:
+          repository: statewalker/statewalker-ci
+          ref: ${{ inputs.checks-ref }}
+          path: .statewalker-ci
+          persist-credentials: false
+
+      - name: Move the script out of the workspace
+        run: mv .statewalker-ci "$RUNNER_TEMP/statewalker-ci"
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ inputs.node-version }}
+
+      # --no-save keeps every range, in package.json and in the catalogs: without it pnpm rewrites
+      # `^0.10.0` to `^0.10.5`, which changes the published manifests and so republishes.
+      - name: Update within the ranges
+        env:
+          PATTERN: ${{ inputs.pattern }}
+        run: pnpm update --recursive --no-save --ignore-scripts "$PATTERN"
+
+      - name: Only the lockfile moved
+        id: check
+        run: node "$RUNNER_TEMP/statewalker-ci/scripts/lockfile-pr.mjs" check
+
+      - if: steps.check.outputs.changed == 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: lockfile
+          path: pnpm-lock.yaml
+          retention-days: 1
+
+  propose:
+    needs: update
+    if: needs.update.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Token
+        id: token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - uses: actions/checkout@v7
+        with:
+          token: ${{ steps.token.outputs.token }}
+
+      - name: Script
+        uses: actions/checkout@v7
+        with:
+          repository: statewalker/statewalker-ci
+          ref: ${{ inputs.checks-ref }}
+          path: .statewalker-ci
+          persist-credentials: false
+
+      - name: Move the script out of the workspace
+        run: mv .statewalker-ci "$RUNNER_TEMP/statewalker-ci"
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: lockfile
+
+      - name: Pull request
+        env:
+          GITHUB_TOKEN: ${{ steps.token.outputs.token }}
+          AUTHOR: ${{ steps.token.outputs.app-slug }}[bot]
+          BRANCH: ${{ inputs.branch }}
+          LABEL: ${{ inputs.label }}
+          SOURCE: ${{ github.event.client_payload.source && format('{0} published {1}', github.event.client_payload.source, join(github.event.client_payload.packages, ', ')) || '' }}
+        run: node "$RUNNER_TEMP/statewalker-ci/scripts/lockfile-pr.mjs" open --branch "$BRANCH" --label "$LABEL" --author "$AUTHOR" --source "$SOURCE"

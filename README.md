@@ -275,6 +275,43 @@ jobs:
   a site without an `index.html` at its root needs a `.site/config.json` that serves something
   there.
 
+## Dependents update themselves after a publish
+
+When a repository publishes, every repository depending on what it published moves its lockfile to
+the new versions within the ranges it declares, in a lockfile-only pull request that merges itself
+once green (`statewalker/statewalker-root#15`). Ranges, manifests and catalogs never change, so a
+compatible release republishes nothing downstream. A version outside a range (a breaking release; a
+minor below 1.0) does not move the lockfile: a session raises the range, bottom-up (root's
+`docs/process/README.md` §3).
+
+1. **The publisher** calls `notify-dependents.yml` after `publish` in its `ci.yml` (the snippet is in
+   the workflow's header; `publish` exposes what it published as the output `published`).
+   `scripts/notify-dependents.mjs` sends a `statewalker-published` `repository_dispatch` to every
+   other repository the `statewalker-release` App is installed on: no dependency map to keep
+   current, and a repository whose lockfile does not move opens nothing.
+2. **Each dependent** has `.github/workflows/statewalker-update.yml` (snippet in the header of the
+   shared `statewalker-update.yml`), run by that dispatch, daily as a fallback, and by hand. It runs
+   `pnpm update --recursive --no-save --ignore-scripts "@statewalker/*"` without credentials, checks
+   that only `pnpm-lock.yaml` moved (`scripts/lockfile-pr.mjs check`), and has the App open or
+   update the pull request from `deps/statewalker-lockfile`, labelled `deps:lockfile`
+   (`lockfile-pr.mjs open`). `--no-save` matters: without it pnpm rewrites `^0.10.0` to `^0.10.5`
+   in the manifests and catalogs, which changes what the dependent publishes.
+3. **The dependent's `ci.yml`** has a `lockfile` job calling `merge-lockfile.yml` (snippet in its
+   header). On that pull request it checks it is still the App's lockfile-only pull request, waits
+   for every other check on its head commit, posts the gate record and squash-merges with the App's
+   token, so CI also runs on `main` afterwards (`lockfile-pr.mjs merge`). A failing check leaves the
+   pull request open with a comment: the dependent does not work with the new versions as they are,
+   and a session takes it from there. This is the merge gate for lockfile-only pull requests (root's
+   `docs/process/merging.md`).
+
+**Tokens.** No long-lived token anywhere: every job that writes mints an installation token of the
+`statewalker-release` App (`actions/create-github-app-token`, client id `RELEASE_APP_CLIENT_ID`,
+key `RELEASE_APP_KEY`), revoked when the job ends. The dispatch token has Contents: write on the
+installation's repositories (what `repository_dispatch` needs); the pull request and merge tokens
+are scoped to the one repository. A repository takes part once the App is installed on it and it
+can read the variable and secret (the checklist under "The version pull request is opened with the
+release App's token" above); the dispatch reaches only those repositories.
+
 ## Dependency updates come from Dependabot
 
 Each repository has a `.github/dependabot.yml` (this repository's covers its GitHub Actions only):
@@ -286,8 +323,9 @@ Each repository has a `.github/dependabot.yml` (this repository's covers its Git
   pulled before it reaches a pull request.
 - **Grouped**: one pull request for `@statewalker/*`, one for third-party minor and patch updates;
   majors come one per pull request. Every pull request runs CI and is merged by hand.
-- **`@statewalker/*` updates are normally made locally**, right after a release, so the Dependabot
-  group only catches what was missed.
+- **`@statewalker/*` updates within a range come from `statewalker-update.yml`** right after a
+  release (above), so the Dependabot group mostly brings versions outside a range, which rewrite it
+  and are taken by a session.
 
 Dependabot alerts and security-fix pull requests are enabled on every repository, independently of
 this file.
