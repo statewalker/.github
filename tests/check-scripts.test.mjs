@@ -56,3 +56,15 @@ test("a single-package app whose tsconfig includes its tests passes", () => {
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /1 test file/);
 });
+
+test("a root `pnpm -r exec tsc` typechecks each package with its own tsconfig", () => {
+  const r = check("recursive-exec-tsc", "library");
+  assert.equal(r.code, 0, r.out);
+});
+
+test("test files at a monorepo's root, outside the packages, must be typechecked too", () => {
+  const r = check("root-tests", "library");
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /tests\/root\.test\.ts is not typechecked/);
+  assert.doesNotMatch(r.out, /packages\/a/);
+});

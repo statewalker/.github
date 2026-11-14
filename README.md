@@ -61,8 +61,9 @@ jobs:
   that has a `tsconfig.json` but no `typecheck` script: `pnpm -r` would skip it silently.
 - **Typechecked tests.** Every TypeScript test file (`*.test.ts`, `*.spec.tsx`, ...) must be compiled
   by a typecheck step: a tsconfig named by the root `typecheck` or `typecheck:tests` script's `tsc`
-  (`-p`/`--project`/`-b`, default `tsconfig.json`), or by the package scripts these run through
-  `pnpm -r`. Include the tests in the package's tsconfig, or give it a `typecheck:tests` script
+  (`-p`/`--project`/`-b`, default `tsconfig.json`; `pnpm -r exec tsc` uses each package's), or by
+  the package scripts these run through `pnpm -r run`. Test files at a monorepo's root, outside the
+  packages, count too. Include the tests in the package's tsconfig, or give it a `typecheck:tests` script
   (`tsc -p tsconfig.test.json`) run from a root `typecheck:tests` (`pnpm -r run typecheck:tests`);
   CI runs root `typecheck:tests` after `typecheck`. Files a config pulls in through `references`
   count.

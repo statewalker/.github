@@ -39,12 +39,26 @@ for (const name of REQUIRED[kind]) {
 // pnpm flags that take a value, so the value is not mistaken for the script name.
 const VALUE_FLAGS = new Set(["--filter", "-F", "--workspace-concurrency", "--reporter", "-C", "--dir", "--sort"]);
 
-/** The script names a root script runs in every package (`pnpm -r run <name>`, `pnpm -r <name>`). */
+/** The pnpm command of a recursive segment (`pnpm -r exec tsc` gives "exec"), or undefined. */
+function recursiveCommand(tokens) {
+  if (tokens[0] !== "pnpm" || !tokens.some((t) => t === "-r" || t === "--recursive")) return undefined;
+  for (let i = 1; i < tokens.length; i++) {
+    if (VALUE_FLAGS.has(tokens[i])) i++;
+    else if (!tokens[i].startsWith("-")) return { command: tokens[i], at: i };
+  }
+  return undefined;
+}
+
+/**
+ * The script names a root script runs in every package (`pnpm -r run <name>`, `pnpm -r <name>`).
+ * `pnpm -r exec <bin>` and `pnpm -r dlx <bin>` run a binary, not a script.
+ */
 function delegatedScripts(script) {
   const names = [];
   for (const segment of script.split(/&&|\|\||;/)) {
     const tokens = segment.trim().split(/\s+/);
-    if (tokens[0] !== "pnpm" || !tokens.some((t) => t === "-r" || t === "--recursive")) continue;
+    const recursive = recursiveCommand(tokens);
+    if (!recursive || recursive.command === "exec" || recursive.command === "dlx") continue;
     let name;
     for (let i = 1; i < tokens.length; i++) {
       const t = tokens[i];
@@ -84,13 +98,18 @@ for (const required of REQUIRED[kind]) {
 
 const TSC = new Set(["tsc", "tsgo", "vue-tsc"]);
 
-/** The tsconfig files a script compiles with tsc, resolved against `dir`. */
-function tsconfigsOf(script, dir) {
+/**
+ * The tsconfig files a script compiles with tsc, resolved against `dir`; for `pnpm -r exec tsc`,
+ * against each package directory in `packageDirs` that has the config.
+ */
+function tsconfigsOf(script, dir, packageDirs = []) {
   const configs = [];
   for (const segment of script.split(/&&|\|\||;/)) {
     const tokens = segment.trim().split(/\s+/);
     const at = tokens.findIndex((t) => TSC.has(t));
     if (at < 0) continue;
+    const recursive = recursiveCommand(tokens);
+    const inEach = recursive?.command === "exec" && recursive.at < at;
     const named = [];
     for (let i = at + 1; i < tokens.length; i++) {
       if (tokens[i] === "-p" || tokens[i] === "--project") named.push(tokens[++i]);
@@ -98,9 +117,13 @@ function tsconfigsOf(script, dir) {
         while (tokens[i + 1] && !tokens[i + 1].startsWith("-")) named.push(tokens[++i]);
       }
     }
+    const resolve = (base, c) => {
+      const file = path.resolve(base, c);
+      return fs.existsSync(file) && fs.statSync(file).isDirectory() ? path.join(file, "tsconfig.json") : file;
+    };
     for (const c of named.length > 0 ? named : ["tsconfig.json"]) {
-      const file = path.resolve(dir, c);
-      configs.push(fs.existsSync(file) && fs.statSync(file).isDirectory() ? path.join(file, "tsconfig.json") : file);
+      if (!inEach) configs.push(resolve(dir, c));
+      else for (const d of packageDirs) if (fs.existsSync(resolve(d, c))) configs.push(resolve(d, c));
     }
   }
   return configs;
@@ -158,12 +181,13 @@ function testFiles(dir, packageDirs, out = []) {
   return out;
 }
 
-const owners = packages.length > 0 ? packages : [{ name: "(root)", path: root, manifest: { scripts: rootScripts } }];
+// The root too: a monorepo's own tests (a root tests/) must be typechecked like the packages'.
+const owners = [{ path: root }, ...packages];
 const configs = new Set();
 for (const rootName of ["typecheck", "typecheck:tests"]) {
   const script = rootScripts[rootName];
   if (!script) continue;
-  for (const c of tsconfigsOf(script, root)) configs.add(c);
+  for (const c of tsconfigsOf(script, root, packages.map((p) => p.path))) configs.add(c);
   for (const name of delegatedScripts(script)) {
     for (const p of packages) {
       const own = p.manifest.scripts?.[name];

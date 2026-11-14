@@ -1,0 +1,11 @@
+{
+  "name": "recursive-exec-tsc",
+  "private": true,
+  "scripts": {
+    "build": "pnpm -r run build",
+    "test": "pnpm -r run test",
+    "typecheck": "pnpm -r exec tsc --noEmit",
+    "lint:check": "biome lint .",
+    "format:check": "biome format ."
+  }
+}
