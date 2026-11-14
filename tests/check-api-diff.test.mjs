@@ -39,3 +39,11 @@ test("a removed entry point fails", () => fails("removed-subpath", /removed entr
 test("a removed member of an exported interface fails", () => fails("removed-member", /removed member "Options\.b"/));
 
 test("a package not on npm yet is skipped", () => passes("unpublished", /@fixture\/a: not on npm yet/));
+
+test("renaming a private class member is not a breaking change", () => passes("private-member-renamed"));
+
+test("a removed static member of an exported class fails", () =>
+  fails("removed-static-member", /removed member "Foo\.static create"/));
+
+test("an export turned type-only (`export type { Foo }`) is no longer a value and fails", () =>
+  fails("value-to-type-only", /export "Foo" of "\." is no longer a value/));

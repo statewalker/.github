@@ -6,8 +6,9 @@
 //
 // The API is read from the packed packages' type declarations, through the entry points of their
 // `exports` (resolved like a bundler-mode TypeScript consumer). Breaking: an entry point removed,
-// an export removed from one, an export that stops being a value or a type, a member removed from
-// an exported class, interface or enum. Changed signatures are not compared.
+// an export removed from one, an export that stops being a value (`export type { X }` included) or
+// a type, a public or protected member removed from an exported class, interface or enum. Changed
+// signatures are not compared.
 //
 //   node check-api-diff.mjs                     fetch the published packages from npm
 //   node check-api-diff.mjs --published <dir>   take them from <dir>/<name>/ instead
@@ -121,6 +122,19 @@ const OPTIONS = {
   noEmit: true,
 };
 
+/** A `private` member (in a .d.ts, `private x;`; `#x` members are not listed at all). */
+const isPrivate = (member) =>
+  member.declarations?.some((d) => ts.getCombinedModifierFlags(d) & ts.ModifierFlags.Private) ?? false;
+
+/** An export reached through `export type { X }` (or an `import type`) somewhere on its alias chain. */
+function isTypeOnly(sym, checker) {
+  for (let s = sym, hops = 0; s && s.flags & ts.SymbolFlags.Alias && hops < 100; hops++) {
+    if (s.declarations?.some((d) => ts.isTypeOnlyImportOrExportDeclaration(d))) return true;
+    s = checker.getImmediateAliasedSymbol(s);
+  }
+  return false;
+}
+
 /**
  * The API of the package installed at `<consumer>/node_modules/<name>`:
  * Map(entry point -> Map(export -> { value, type, members: Set }) | null when it has no types).
@@ -148,16 +162,18 @@ function surface(consumer, name) {
       const target = sym.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(sym) : sym;
       const members = new Set();
       if (target.flags & (ts.SymbolFlags.Interface | ts.SymbolFlags.Class)) {
-        for (const p of checker.getPropertiesOfType(checker.getDeclaredTypeOfSymbol(target))) members.add(p.name);
+        for (const p of checker.getPropertiesOfType(checker.getDeclaredTypeOfSymbol(target))) {
+          if (!isPrivate(p)) members.add(p.name);
+        }
       }
       if (target.flags & ts.SymbolFlags.Class) {
         for (const p of checker.getPropertiesOfType(checker.getTypeOfSymbol(target))) {
-          if (p.name !== "prototype") members.add(`static ${p.name}`);
+          if (p.name !== "prototype" && !isPrivate(p)) members.add(`static ${p.name}`);
         }
       }
       if (target.flags & ts.SymbolFlags.Enum) for (const key of target.exports?.keys() ?? []) members.add(String(key));
       exports.set(sym.name, {
-        value: Boolean(target.flags & ts.SymbolFlags.Value),
+        value: Boolean(target.flags & ts.SymbolFlags.Value) && !isTypeOnly(sym, checker),
         type: Boolean(target.flags & ts.SymbolFlags.Type),
         members,
       });

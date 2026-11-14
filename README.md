@@ -93,7 +93,7 @@ Two more opt-in switches, so projects adopt them one by one (lowest layer first 
   declarations are compared with npm's `latest`, entry point by entry point (`exports`, resolved as
   a bundler-mode TypeScript consumer resolves them). **Breaking**: an entry point removed or left
   without types, an export removed, an export that stops being a value or a type, a member removed
-  from an exported class, interface or enum. A breaking change fails unless the pull request
+  from an exported class, interface or enum (private members do not count; `export type { X }` stops X being a value). A breaking change fails unless the pull request
   declares the bump it needs, **major** from 1.0, **minor** on 0.x, **patch** on 0.0.x (what a caret
   range lets through), either with a changeset (`.changeset/*.md`, `"@statewalker/x": major`) or
   with the package.json version already past npm's. Additions are listed and need no bump.
