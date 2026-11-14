@@ -1,0 +1,22 @@
+[
+  {
+    "url": "https://api.github.com/repos/statewalker/example/issues/12",
+    "html_url": "https://github.com/statewalker/example/issues/12",
+    "number": 12,
+    "state": "open",
+    "title": "CI baseline: typecheck the tests",
+    "labels": [{ "id": 1, "name": "ci-baseline", "color": "ededed" }],
+    "body": "The tsconfig does not include the tests.",
+    "pull_request": null
+  },
+  {
+    "url": "https://api.github.com/repos/statewalker/example/issues/14",
+    "html_url": "https://github.com/statewalker/example/pull/14",
+    "number": 14,
+    "state": "open",
+    "title": "Nightly: browser and end-to-end suites fail",
+    "labels": [{ "id": 1, "name": "ci-baseline", "color": "ededed" }],
+    "body": "A pull request that happens to carry the title and label.",
+    "pull_request": { "url": "https://api.github.com/repos/statewalker/example/pulls/14" }
+  }
+]

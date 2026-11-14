@@ -1,0 +1,103 @@
+name: Nightly
+
+# The nightly browser and end-to-end suites of a statewalker project: the slow suites the per-PR
+# CI does not run. A project opts in with its own scheduled workflow:
+#
+#   on:
+#     schedule:
+#       - cron: "17 3 * * *"
+#     workflow_dispatch:
+#   permissions:
+#     contents: read
+#     issues: write
+#   jobs:
+#     nightly:
+#       uses: statewalker/.github/.github/workflows/nightly.yml@main
+#       with:
+#         setup: pnpm exec playwright install --with-deps chromium
+#
+# It runs the project's `test:nightly` script (or `test-command`) after the install and build. On
+# failure it opens one `bug` issue labelled `ci-baseline` in the project, or comments on the one
+# already open (scripts/report-nightly.mjs), and the run fails. A passing run writes nothing.
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: Node.js version.
+        type: string
+        default: "24"
+      setup:
+        description: Shell commands run after the build and before the suites (browsers, services, ...).
+        type: string
+        default: ""
+      test-command:
+        description: The command running the browser and end-to-end suites.
+        type: string
+        default: pnpm run test:nightly
+      timeout-minutes:
+        description: >-
+          How long the suites may run. A suite that hangs past it fails (and is reported) instead of
+          running into the job's six-hour limit, which cancels the run without a report.
+        type: number
+        default: 90
+      checks-ref:
+        description: The ref of statewalker/.github to take the reporting script from.
+        type: string
+        default: main
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check scripts
+        uses: actions/checkout@v7
+        with:
+          repository: statewalker/.github
+          ref: ${{ inputs.checks-ref }}
+          path: .statewalker-ci
+
+      - name: Move the check scripts out of the workspace
+        run: mv .statewalker-ci "$RUNNER_TEMP/statewalker-ci"
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm run --if-present build
+
+      - name: Setup for the suites
+        if: inputs.setup != ''
+        run: ${{ inputs.setup }}
+
+      - name: Browser and end-to-end suites
+        id: suites
+        continue-on-error: true
+        timeout-minutes: ${{ inputs.timeout-minutes }}
+        run: ${{ inputs.test-command }}
+
+      # A failure before the suites (install, build, setup) is reported too: the job's status.
+      - name: Report to the project's issues
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          OUTCOME: ${{ steps.suites.outcome != 'skipped' && steps.suites.outcome || job.status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SUITE: ${{ inputs.test-command }}
+        run: node "$RUNNER_TEMP/statewalker-ci/scripts/report-nightly.mjs" --outcome "$OUTCOME" --run-url "$RUN_URL" --suite "$SUITE"
+
+      - name: Fail the run when the suites failed
+        if: steps.suites.outcome == 'failure'
+        run: exit 1
