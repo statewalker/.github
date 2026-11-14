@@ -62,8 +62,9 @@ jobs:
           path: ${{ runner.temp }}/published
 
       # Each tarball's name@version, kept only when npm serves it: a package `publish` refused is
-      # not announced. The registry can lag right after a publish, so a missing one is asked for
-      # again for about a minute.
+      # not announced. npm lists a new version minutes before it serves the tarball, and a
+      # dependent's `pnpm update` needs the tarball, so each one is waited for, up to about six
+      # minutes (statewalker/statewalker-root#61).
       - name: What was published
         id: published
         env:
@@ -75,8 +76,9 @@ jobs:
               [ -e "$t" ] || continue
               id=$(tar -xzOf "$t" package/package.json | node -p "const p=JSON.parse(require('fs').readFileSync(0));p.name+'@'+p.version")
               found=false
-              for _ in 1 2 3 4 5 6; do
-                if npm view "$id" version >/dev/null 2>&1; then found=true; break; fi
+              for _ in $(seq 36); do
+                url=$(npm view "$id" dist.tarball 2>/dev/null || true)
+                if [ -n "$url" ] && curl -fsIL -o /dev/null "$url"; then found=true; break; fi
                 sleep 10
               done
               if [ "$found" = true ]; then list="$list $id"; else echo "$id is not on npm: not announced"; fi
