@@ -35,6 +35,12 @@ on:
         description: The command running the browser and end-to-end suites.
         type: string
         default: pnpm run test:nightly
+      timeout-minutes:
+        description: >-
+          How long the suites may run. A suite that hangs past it fails (and is reported) instead of
+          running into the job's six-hour limit, which cancels the run without a report.
+        type: number
+        default: 90
       checks-ref:
         description: The ref of statewalker/.github to take the reporting script from.
         type: string
@@ -79,6 +85,7 @@ jobs:
       - name: Browser and end-to-end suites
         id: suites
         continue-on-error: true
+        timeout-minutes: ${{ inputs.timeout-minutes }}
         run: ${{ inputs.test-command }}
 
       # A failure before the suites (install, build, setup) is reported too: the job's status.

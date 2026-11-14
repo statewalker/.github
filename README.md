@@ -173,7 +173,8 @@ jobs:
   It runs after `pnpm install --frozen-lockfile`, the `build` script (when defined) and `setup`.
   Another command can be given as `test-command`.
 - **Inputs:** `node-version` (default `24`), `setup`, `test-command` (default
-  `pnpm run test:nightly`), `checks-ref`.
+  `pnpm run test:nightly`), `timeout-minutes` (default 90: a suite that hangs past it fails and is
+  reported), `checks-ref`.
 - **On failure** (of the suites, or of the install, build or setup before them),
   `scripts/report-nightly.mjs` opens one issue in the project, labelled `bug` and `ci-baseline`
   (creating the labels when missing), titled "Nightly: browser and end-to-end suites fail", with a
@@ -181,6 +182,8 @@ jobs:
   with its run instead of opening another. Close the issue once fixed; the next failure opens a new
   one. The run fails too, so it shows red in Actions.
 - **On success** nothing is written.
+
+## Running the checks locally
 
 
 The scripts are plain Node and run locally too, from a repository's root (`check-scripts.mjs` uses
