@@ -62,12 +62,12 @@ const OLD = path.join(additive, "published", "@fixture", "a");
 const NEW = path.join(additive, "packages", "a");
 
 /** Run the script with npm faked from `entry` (the registry's @fixture/a); its output and npm's pack log. */
-function againstNpm(t, entry) {
+function againstNpm(t, entry, fixture = "api-diff/additive") {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "api-diff-npm-"));
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   const state = path.join(dir, "registry.json");
   fs.writeFileSync(state, JSON.stringify({ "@fixture/a": entry }));
-  const r = runCheck("check-api-diff.mjs", "api-diff/additive", [], {
+  const r = runCheck("check-api-diff.mjs", fixture, [], {
     FAKE_NPM: state,
     PATH: `${path.join(repoRoot, "tests", "fake-npm")}${path.delimiter}${process.env.PATH}`,
     API_DIFF_NPM_RETRY_SECONDS: "0",
@@ -102,4 +102,26 @@ test("an npm failure other than a 404 still fails the check", (t) => {
   assert.notEqual(r.code, 0, r.out);
   assert.match(r.out, /EACCES/);
   assert.deepEqual(r.packs, ["@fixture/a@1.1.0"]);
+});
+
+test("after a breaking release npm does not serve yet, a pull request's own breaking change still needs a bump from that release", (t) => {
+  // npm lists 1.0.0 (a major over 0.9.0) but does not serve it yet; the workspace is at 1.0.0 and
+  // removes the export "two" with no changeset. Measured from 0.9.0 the version alone would look
+  // like the major bump the removal needs; measured from npm's latest, it declares none.
+  const removed = path.join(repoRoot, "fixtures", "api-diff", "removed-export");
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "api-diff-prev-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const previous = path.join(dir, "a");
+  fs.cpSync(path.join(removed, "published", "@fixture", "a"), previous, { recursive: true });
+  const manifest = JSON.parse(fs.readFileSync(path.join(previous, "package.json"), "utf8"));
+  fs.writeFileSync(path.join(previous, "package.json"), JSON.stringify({ ...manifest, version: "0.9.0" }));
+  const r = againstNpm(
+    t,
+    { latest: "1.0.0", versions: { "0.9.0": previous, "1.0.0": path.join(removed, "packages", "a") }, missing: { "1.0.0": -1 } },
+    "api-diff/removed-export",
+  );
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /removed export "two"/);
+  assert.match(r.out, /needs a major bump/);
+  assert.match(r.out, /npm does not serve 1\.0\.0 yet/);
 });

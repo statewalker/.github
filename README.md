@@ -101,7 +101,8 @@ Two more opt-in switches, so projects adopt them one by one (lowest layer first 
   with the package.json version already past npm's. Additions are listed and need no bump.
   Packages not on npm yet are skipped. Right after a release, npm names the new version `latest`
   some minutes before it serves its tarball: the check asks for it again (5 tries, 30 s apart), then
-  compares with the version before it, and says so in its log. Changed signatures (a parameter's
+  compares with the version before it, and says so in its log (the bump a breaking change needs is
+  still measured from the new version). Changed signatures (a parameter's
   type, a return type) are not compared: the reviewer judges those.
 
 The tools (publint, attw, and the TypeScript the API diff uses) are pinned in this repository's

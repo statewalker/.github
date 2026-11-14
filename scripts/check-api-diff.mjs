@@ -122,15 +122,19 @@ function previousVersion(name, version) {
 }
 
 /**
- * Put npm's `latest` of a package into `dest`; its version, or undefined when it is not on npm.
- * When npm does not serve the tarball of a `latest` published minutes ago, the version before it
- * is compared instead: nothing in a pull request can depend on a release that new.
+ * Put npm's `latest` of a package into `dest`: `{ version, compared }`, or undefined when it is not
+ * on npm. `version` is npm's `latest`, the version a breaking change's bump is measured from.
+ * `compared` is the version whose API is in `dest`: `latest`, or, when npm does not serve the
+ * tarball of a `latest` published minutes ago, the version before it. The bump is still measured
+ * from `latest`, or a pull request after a major release would count that release's bump as its own.
  */
 function fetchPublished(name, dest, work) {
   if (values.published) {
     const dir = path.resolve(root, values.published, name);
     if (!fs.existsSync(path.join(dir, "package.json"))) return undefined;
     fs.cpSync(dir, dest, { recursive: true });
+    const { version } = JSON.parse(fs.readFileSync(path.join(dest, "package.json"), "utf8"));
+    return { version, compared: version };
   } else {
     let version;
     try {
@@ -139,14 +143,13 @@ function fetchPublished(name, dest, work) {
       if (isNotFound(err)) return undefined;
       throw err;
     }
-    if (!packPublished(name, version, dest, work)) {
-      const previous = previousVersion(name, version);
-      if (!previous) return undefined;
-      console.log(`${name}: npm does not serve ${version} yet (just published?): comparing with ${previous}`);
-      if (!packPublished(name, previous, dest, work)) return undefined;
-    }
+    if (packPublished(name, version, dest, work)) return { version, compared: version };
+    const previous = previousVersion(name, version);
+    if (!previous) return undefined;
+    console.log(`${name}: npm does not serve ${version} yet (just published?): comparing with ${previous}`);
+    if (!packPublished(name, previous, dest, work)) return undefined;
+    return { version, compared: previous };
   }
-  return JSON.parse(fs.readFileSync(path.join(dest, "package.json"), "utf8")).version;
 }
 
 // --- The API surface ---
@@ -271,8 +274,8 @@ try {
   for (const [i, pkg] of pkgs.entries()) {
     const published = path.join(work, `${i}-published`);
     const local = path.join(work, `${i}-local`);
-    const npmVersion = fetchPublished(pkg.name, path.join(published, "node_modules", pkg.name), work);
-    if (!npmVersion) {
+    const fetched = fetchPublished(pkg.name, path.join(published, "node_modules", pkg.name), work);
+    if (!fetched) {
       console.log(`${pkg.name}: not on npm yet, nothing to compare`);
       continue;
     }
@@ -280,6 +283,7 @@ try {
     const { breaking, added } = diff(surface(published, pkg.name), surface(local, pkg.name));
     for (const a of added) console.log(`${pkg.name}: added ${a}`);
     if (breaking.length === 0) continue;
+    const { version: npmVersion, compared } = fetched;
     const needs = breakingBump(npmVersion);
     const byVersion = bumpBetween(npmVersion, pkg.version);
     const byChangeset = declared[pkg.name] ?? "none";
@@ -287,9 +291,12 @@ try {
     for (const b of breaking) console.log(`${pkg.name}: ${b}`);
     if (LEVELS.indexOf(has) < LEVELS.indexOf(needs)) {
       problems.push(
-        `${pkg.name}: ${breaking.length} breaking change(s) against ${npmVersion} on npm (${breaking.join("; ")}); ` +
-          `it needs a ${needs} bump but declares ${has} (version ${pkg.version}, changeset ${byChangeset}). ` +
-          `Add a changeset ("${pkg.name}": ${needs}) or restore the API.`,
+        `${pkg.name}: ${breaking.length} breaking change(s) against ${compared} on npm (${breaking.join("; ")}); ` +
+          `it needs a ${needs} bump from ${npmVersion} but declares ${has} (version ${pkg.version}, changeset ${byChangeset}). ` +
+          `Add a changeset ("${pkg.name}": ${needs}) or restore the API.` +
+          (compared === npmVersion
+            ? ""
+            : ` npm does not serve ${npmVersion} yet, so ${compared} was compared: if these changes came with ${npmVersion}, re-run in a few minutes.`),
       );
     }
   }
