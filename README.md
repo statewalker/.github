@@ -1,6 +1,7 @@
 # statewalker/.github
 
-Shared CI for the statewalker monorepos, the release-planning script, and site publishing.
+Shared CI for the statewalker monorepos, the nightly browser and end-to-end suites, the
+release-planning script, and site publishing.
 
 ## Use
 
@@ -145,7 +146,42 @@ Locally, from a repository's root: `bash ../.github/scripts/install-gitleaks.sh`
 `GITLEAKS=` path to use, then `GITLEAKS=<path> node ../.github/scripts/check-secrets.mjs` and
 `node ../.github/scripts/check-release-path.mjs` (after `pnpm install` here, for `yaml`).
 
-## Running the checks locally
+## Nightly browser and end-to-end suites
+
+`nightly.yml` runs a project's slow suites (browsers, end-to-end, integration) on a schedule, since
+the CI of every pull request does not. A project opts in with its own workflow,
+`.github/workflows/nightly.yml`:
+
+```yaml
+name: Nightly
+on:
+  schedule:
+    - cron: "17 3 * * *"   # any quiet hour, UTC
+  workflow_dispatch:
+permissions:
+  contents: read
+  issues: write            # for the failure issue
+jobs:
+  nightly:
+    uses: statewalker/.github/.github/workflows/nightly.yml@main
+    with:
+      setup: pnpm exec playwright install --with-deps chromium
+```
+
+- **Scripts the project provides:** a root `test:nightly` that runs every browser and end-to-end
+  suite, for example `pnpm -r --if-present run test:browser && pnpm -r --if-present run test:e2e`.
+  It runs after `pnpm install --frozen-lockfile`, the `build` script (when defined) and `setup`.
+  Another command can be given as `test-command`.
+- **Inputs:** `node-version` (default `24`), `setup`, `test-command` (default
+  `pnpm run test:nightly`), `checks-ref`.
+- **On failure** (of the suites, or of the install, build or setup before them),
+  `scripts/report-nightly.mjs` opens one issue in the project, labelled `bug` and `ci-baseline`
+  (creating the labels when missing), titled "Nightly: browser and end-to-end suites fail", with a
+  link to the run. **The duplicate check:** while that issue is open, a later failure adds a comment
+  with its run instead of opening another. Close the issue once fixed; the next failure opens a new
+  one. The run fails too, so it shows red in Actions.
+- **On success** nothing is written.
+
 
 The scripts are plain Node and run locally too, from a repository's root (`check-scripts.mjs` uses
 the repository's own TypeScript; the package checks above use this repository's dependencies):
