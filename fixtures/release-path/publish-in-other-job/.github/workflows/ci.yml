@@ -1,0 +1,13 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  ci:
+    uses: statewalker/.github/.github/workflows/ci.yml@main
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: npm publish --provenance --access public

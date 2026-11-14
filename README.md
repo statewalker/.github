@@ -23,8 +23,9 @@ Dependency updates come from Dependabot: each repository has its own `.github/de
 Inputs: `node-version` (default `24`), `setup` (shell commands run before the tests, e.g. installing
 browsers), `test-command` (default `pnpm run test`), `checks-ref` (the ref of this repository to take
 the check scripts from), `baseline` (`off`, `library` or `app`: the required baseline below),
-`package-checks` and `attw-profile` (publint and attw), `api-diff` (the API diff against npm); see
-"Package checks and the API diff" below.
+`package-checks` and `attw-profile` (publint and attw), `api-diff` (the API diff against npm),
+`secret-scan` (gitleaks) and `release-path` (publishing only from the standard `publish` job); see
+the sections below.
 
 ## What it runs
 
@@ -109,6 +110,36 @@ node ../.github/scripts/check-package-tools.mjs
 node ../.github/scripts/check-api-diff.mjs
 ```
 
+## Secret scan and release path
+
+Two more opt-in switches:
+
+```yaml
+    with:
+      secret-scan: true    # gitleaks
+      release-path: true   # publishing only from the standard publish job
+```
+
+- **Secret scan** (`scripts/check-secrets.mjs`, `secret-scan: true`): [gitleaks](https://github.com/gitleaks/gitleaks)
+  scans the repository's files right after the checkout, before the install. A finding fails the
+  job; the output redacts the secret. A leaked secret is revoked, not just deleted: it was exposed
+  once pushed. False positives go in the repository's `.gitleaks.toml` (an allowlist) or
+  `.gitleaksignore` (fingerprints from the output). gitleaks is pinned, by version and SHA-256,
+  in `scripts/install-gitleaks.sh`. This complements GitHub secret scanning with push protection,
+  an organization setting that stops a secret before it is pushed.
+- **Release path** (`scripts/check-release-path.mjs`, `release-path: true`): fails any publish step
+  outside the job `publish` of `.github/workflows/ci.yml`: in another job, another workflow file
+  (even one whose job is named `publish`) or a composite action under `.github/actions/`. A publish
+  step is `npm publish`, `pnpm publish` (`pnpm -r publish` included), `yarn publish`, `yarn npm
+  publish`, `bun publish` or `changeset publish` (`pnpm changeset publish`, `npx changeset publish`),
+  a root package.json script reaching one of these through other scripts, `changesets/action` with
+  a `publish` input, or an npm-publish action. `--dry-run` does not count. A version job
+  (`changesets/action` with `version` only) passes.
+
+Locally, from a repository's root: `bash ../.github/scripts/install-gitleaks.sh` prints the
+`GITLEAKS=` path to use, then `GITLEAKS=<path> node ../.github/scripts/check-secrets.mjs` and
+`node ../.github/scripts/check-release-path.mjs` (after `pnpm install` here, for `yaml`).
+
 ## Running the checks locally
 
 The scripts are plain Node and run locally too, from a repository's root (`check-scripts.mjs` uses
@@ -123,11 +154,13 @@ This repository checks itself (`.github/workflows/self-test.yml`): `pnpm test` r
 script against the small repositories in `fixtures/` (a clean one passes, each defect fails), and
 actionlint checks the workflows.
 
-## Releases are made by hand, not by CI
+## Releases are made by CI, from the standard publish job
 
-CI never publishes. A maintainer releases from a local checkout, with their own npm login and 2FA,
-so no publishing credential is stored in GitHub. The cost: packages carry no provenance attestation,
-which only a CI-issued identity can sign.
+Publishing happens only in CI: npm trusted publishing from the standard `publish` job of each
+project's `.github/workflows/ci.yml`, after a "version packages" pull request
+([decision](https://github.com/statewalker/statewalker-root/issues/10); root's
+`docs/process/README.md` §4). Never publish by hand. The release-path check below fails a publish
+step anywhere else.
 
 `scripts/release-changesets.mjs` plans a release. Each public package is packed as `pnpm publish`
 would pack it and compared with npm's `latest`:

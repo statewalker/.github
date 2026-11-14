@@ -1,0 +1,7 @@
+{
+  "name": "release-path-clean",
+  "private": true,
+  "scripts": {
+    "build": "tsc -b"
+  }
+}

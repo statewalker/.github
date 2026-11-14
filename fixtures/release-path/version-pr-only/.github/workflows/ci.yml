@@ -1,0 +1,17 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  ci:
+    uses: statewalker/.github/.github/workflows/ci.yml@main
+  version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: changesets/action@v1
+        with:
+          version: pnpm changeset version
+      - run: npm publish --dry-run
+      - run: pnpm run publish-docs
