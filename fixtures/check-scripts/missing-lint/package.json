@@ -1,0 +1,10 @@
+{
+  "name": "missing-lint",
+  "private": true,
+  "scripts": {
+    "build": "pnpm -r run build",
+    "test": "pnpm -r run test",
+    "typecheck": "pnpm -r run typecheck",
+    "format:check": "biome format ."
+  }
+}

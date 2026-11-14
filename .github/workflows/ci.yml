@@ -12,7 +12,9 @@ name: CI
 # `exports` that point at dist/), tests, then the publishing checks on the built
 # packages (export targets exist, dist imports are declared dependencies, packed
 # manifests carry no workspace:/catalog: specifiers). Root scripts that a
-# repository does not define are skipped.
+# repository does not define are skipped, unless it opted into the required
+# baseline with the `baseline` input (library or app): then a missing required
+# script, or a test file no typecheck step compiles, fails the job.
 
 on:
   workflow_call:
@@ -33,6 +35,13 @@ on:
         description: The ref of statewalker/.github to take the check scripts from.
         type: string
         default: main
+      baseline:
+        description: >-
+          The required CI baseline: `library` (lint:check, format:check, build, typecheck and test
+          must exist), `app` (build and typecheck), or `off` (skip root scripts that are missing).
+          With library or app, tests must be typechecked too. Projects switch it on one by one.
+        type: string
+        default: "off"
 
 jobs:
   ci:
@@ -64,17 +73,28 @@ jobs:
       - name: Dependency references
         run: node "$RUNNER_TEMP/statewalker-ci/scripts/check-conventions.mjs"
 
+      - name: Required scripts and typechecked tests
+        if: inputs.baseline != 'off'
+        env:
+          BASELINE: ${{ inputs.baseline }}
+        run: node "$RUNNER_TEMP/statewalker-ci/scripts/check-scripts.mjs" "$BASELINE"
+
+      # `--if-present` skips a missing script; the baseline drops it for the scripts it requires.
       - name: Lint
-        run: pnpm run --if-present lint:check
+        run: pnpm run ${{ inputs.baseline != 'library' && '--if-present' || '' }} lint:check
 
       - name: Format
-        run: pnpm run --if-present format:check
+        run: pnpm run ${{ inputs.baseline != 'library' && '--if-present' || '' }} format:check
 
       - name: Build
-        run: pnpm run --if-present build
+        run: pnpm run ${{ inputs.baseline == 'off' && '--if-present' || '' }} build
 
       - name: Typecheck
-        run: pnpm run --if-present typecheck
+        run: pnpm run ${{ inputs.baseline == 'off' && '--if-present' || '' }} typecheck
+
+      - name: Typecheck tests
+        if: inputs.baseline != 'off'
+        run: pnpm run --if-present typecheck:tests
 
       - name: Setup for tests
         if: inputs.setup != ''

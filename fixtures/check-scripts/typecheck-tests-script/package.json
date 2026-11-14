@@ -1,0 +1,12 @@
+{
+  "name": "typecheck-tests-script",
+  "private": true,
+  "scripts": {
+    "build": "pnpm -r run build",
+    "test": "pnpm -r run test",
+    "typecheck": "pnpm -r run typecheck",
+    "lint:check": "biome lint .",
+    "format:check": "biome format .",
+    "typecheck:tests": "pnpm -r run typecheck:tests"
+  }
+}
