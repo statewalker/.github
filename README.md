@@ -285,7 +285,8 @@ minor below 1.0) does not move the lockfile: a session raises the range, bottom-
 `docs/process/README.md` §3).
 
 1. **The publisher** calls `notify-dependents.yml` after `publish` in its `ci.yml` (the snippet is in
-   the workflow's header; `publish` exposes what it published as the output `published`).
+   the workflow's header). It reads what was published from the run's `packages` artifact: each
+   tarball's name@version that npm now serves.
    `scripts/notify-dependents.mjs` sends a `statewalker-published` `repository_dispatch` to every
    other repository the `statewalker-release` App is installed on: no dependency map to keep
    current, and a repository whose lockfile does not move opens nothing.
@@ -310,7 +311,9 @@ key `RELEASE_APP_KEY`), revoked when the job ends. The dispatch token has Conten
 installation's repositories (what `repository_dispatch` needs); the pull request and merge tokens
 are scoped to the one repository. A repository takes part once the App is installed on it and it
 can read the variable and secret (the checklist under "The version pull request is opened with the
-release App's token" above); the dispatch reaches only those repositories.
+release App's token" above); the dispatch reaches only those repositories. Until then the
+workflows stay green while there is nothing to do: `notify` warns that it notified nobody, and
+`statewalker-update.yml` fails only once the lockfile moves and no pull request can be opened.
 
 ## Dependency updates come from Dependabot
 

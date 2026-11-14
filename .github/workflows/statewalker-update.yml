@@ -49,8 +49,10 @@ on:
         type: string
         default: main
     secrets:
+      # Optional so that a repository without the App yet runs green while its lockfile is
+      # current; once it moves, `propose` fails and says what is missing.
       RELEASE_APP_KEY:
-        required: true
+        required: false
 
 jobs:
   update:
@@ -106,6 +108,15 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Release App configured
+        env:
+          CLIENT_ID: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          KEY: ${{ secrets.RELEASE_APP_KEY }}
+        run: |
+          [ -n "$CLIENT_ID" ] && [ -n "$KEY" ] && exit 0
+          echo "::error::The lockfile moved, but no pull request can be opened: this repository cannot read RELEASE_APP_CLIENT_ID / RELEASE_APP_KEY. Install the statewalker-release App on it and grant it the organization variable and secret (statewalker-ci README, \"The version pull request is opened with the release App's token\")."
+          exit 1
+
       - name: Token
         id: token
         uses: actions/create-github-app-token@v3

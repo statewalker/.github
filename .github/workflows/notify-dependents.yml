@@ -7,30 +7,39 @@ name: Notify dependents
 #
 #   notify:
 #     needs: publish
-#     if: ${{ !cancelled() && needs.publish.outputs.published != '' }}
+#     if: ${{ !cancelled() && needs.publish.result != 'skipped' }}
+#     permissions: {}
 #     uses: statewalker/statewalker-ci/.github/workflows/notify-dependents.yml@main
-#     with:
-#       packages: ${{ needs.publish.outputs.published }}
 #     secrets: inherit
+#
+# What was published is read from the run's `packages` artifact (the tarballs `publish`
+# uploads): each name@version that npm now serves. Also after a partly failed `publish`, for
+# what did go out. A caller may name the packages itself with the `packages` input instead.
 #
 # No long-lived token: the job mints an installation token of the App (client id in the
 # organization variable RELEASE_APP_CLIENT_ID, private key in the organization secret
-# RELEASE_APP_KEY), with Contents: write only, and it is revoked when the job ends.
+# RELEASE_APP_KEY), with Contents: write only, and it is revoked when the job ends. A repository
+# that cannot read them yet gets a warning, not a failure: the publish itself succeeded, and the
+# dependents' daily run picks the new versions up.
 
 on:
   workflow_call:
     inputs:
       packages:
-        description: What was published, space-separated name@version.
+        description: What was published, space-separated name@version. Default, read from the `packages` artifact.
         type: string
-        required: true
+        default: ""
+      artifact:
+        description: The artifact holding the published tarballs, when `packages` is not given.
+        type: string
+        default: packages
       checks-ref:
         description: The ref of statewalker/statewalker-ci to take the script from.
         type: string
         default: main
     secrets:
       RELEASE_APP_KEY:
-        required: true
+        required: false
 
 jobs:
   notify:
@@ -45,9 +54,50 @@ jobs:
           path: .statewalker-ci
           persist-credentials: false
 
+      - name: Published tarballs
+        if: inputs.packages == ''
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.artifact }}
+          path: ${{ runner.temp }}/published
+
+      # Each tarball's name@version, kept only when npm serves it: a package `publish` refused is
+      # not announced. The registry can lag right after a publish, so a missing one is asked for
+      # again for about a minute.
+      - name: What was published
+        id: published
+        env:
+          GIVEN: ${{ inputs.packages }}
+        run: |
+          list="$GIVEN"
+          if [ -z "$list" ]; then
+            for t in "$RUNNER_TEMP"/published/*.tgz; do
+              [ -e "$t" ] || continue
+              id=$(tar -xzOf "$t" package/package.json | node -p "const p=JSON.parse(require('fs').readFileSync(0));p.name+'@'+p.version")
+              found=false
+              for attempt in 1 2 3 4 5 6; do
+                if npm view "$id" version >/dev/null 2>&1; then found=true; break; fi
+                sleep 10
+              done
+              if [ "$found" = true ]; then list="$list $id"; else echo "$id is not on npm: not announced"; fi
+            done
+          fi
+          echo "packages=$(echo $list)" >> "$GITHUB_OUTPUT"
+
+      - name: Release App configured
+        id: app
+        env:
+          CLIENT_ID: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          KEY: ${{ secrets.RELEASE_APP_KEY }}
+        run: |
+          if [ -n "$CLIENT_ID" ] && [ -n "$KEY" ]; then echo "ok=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          echo "::warning::Dependents not notified: this repository cannot read RELEASE_APP_CLIENT_ID / RELEASE_APP_KEY (install the statewalker-release App on it and grant it the variable and secret; statewalker-ci README). Their daily statewalker-update run picks the new versions up."
+          echo "ok=false" >> "$GITHUB_OUTPUT"
+
       # No `repositories`: the token covers every repository the App is installed on.
       - name: Dispatch token
         id: token
+        if: steps.app.outputs.ok == 'true' && steps.published.outputs.packages != ''
         uses: actions/create-github-app-token@v3
         with:
           client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
@@ -56,7 +106,8 @@ jobs:
           permission-contents: write
 
       - name: Notify
+        if: steps.token.outcome == 'success'
         env:
           GITHUB_TOKEN: ${{ steps.token.outputs.token }}
-          PACKAGES: ${{ inputs.packages }}
+          PACKAGES: ${{ steps.published.outputs.packages }}
         run: node .statewalker-ci/scripts/notify-dependents.mjs --packages "$PACKAGES"
