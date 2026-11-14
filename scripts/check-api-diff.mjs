@@ -13,6 +13,9 @@
 //   node check-api-diff.mjs                     fetch the published packages from npm
 //   node check-api-diff.mjs --published <dir>   take them from <dir>/<name>/ instead
 //
+// A `latest` whose tarball npm does not serve yet (published minutes ago) is asked for again, then
+// replaced by the version before it. API_DIFF_NPM_RETRY_SECONDS (default 30) paces the retries.
+//
 // Run after the build. TypeScript is this repository's own dependency: install it first with
 // `pnpm install --frozen-lockfile` in this repository.
 import { execFileSync } from "node:child_process";
@@ -82,7 +85,47 @@ function packLocal(pkg, dest, work) {
   unpack(path.join(out, fs.readdirSync(out).find((f) => f.endsWith(".tgz"))), dest);
 }
 
-/** Put npm's `latest` of a package into `dest`; its version, or undefined when it is not on npm. */
+const isNotFound = (err) => /E404|404 Not Found/.test(String(err.stderr ?? err));
+const npm = (args) => execFileSync("npm", args, { encoding: "utf8", stdio: "pipe" });
+
+// npm names a just-published version `latest` minutes before it serves its tarball
+// (statewalker/statewalker-root#61). A tarball that answers 404 is asked for again, NPM_ATTEMPTS
+// times in all, NPM_RETRY_SECONDS apart.
+const NPM_ATTEMPTS = 5;
+const NPM_RETRY_SECONDS = Number(process.env.API_DIFF_NPM_RETRY_SECONDS ?? 30);
+const sleep = (seconds) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, seconds * 1000);
+
+/** `npm pack` one version into `dest`: true, or false when npm still answers 404 after the retries. */
+function packPublished(name, version, dest, work) {
+  for (let attempt = 1; ; attempt++) {
+    const out = fs.mkdtempSync(path.join(work, "npm-"));
+    try {
+      npm(["pack", `${name}@${version}`, "--pack-destination", out]);
+    } catch (err) {
+      if (!isNotFound(err)) throw err;
+      if (attempt >= NPM_ATTEMPTS) return false;
+      sleep(NPM_RETRY_SECONDS);
+      continue;
+    }
+    unpack(path.join(out, fs.readdirSync(out).find((f) => f.endsWith(".tgz"))), dest);
+    return true;
+  }
+}
+
+/** The newest stable version npm lists below `version`, or undefined. */
+function previousVersion(name, version) {
+  const newer = (a, b) => bumpBetween(b, a) !== "none";
+  const listed = [JSON.parse(npm(["view", name, "versions", "--json"]))].flat();
+  return listed
+    .filter((v) => !v.includes("-") && newer(version, v))
+    .reduce((best, v) => (best === undefined || newer(v, best) ? v : best), undefined);
+}
+
+/**
+ * Put npm's `latest` of a package into `dest`; its version, or undefined when it is not on npm.
+ * When npm does not serve the tarball of a `latest` published minutes ago, the version before it
+ * is compared instead: nothing in a pull request can depend on a release that new.
+ */
 function fetchPublished(name, dest, work) {
   if (values.published) {
     const dir = path.resolve(root, values.published, name);
@@ -91,14 +134,17 @@ function fetchPublished(name, dest, work) {
   } else {
     let version;
     try {
-      version = JSON.parse(execFileSync("npm", ["view", `${name}@latest`, "version", "--json"], { encoding: "utf8", stdio: "pipe" }));
+      version = JSON.parse(npm(["view", `${name}@latest`, "version", "--json"]));
     } catch (err) {
-      if (/E404|404 Not Found/.test(String(err.stderr ?? err))) return undefined;
+      if (isNotFound(err)) return undefined;
       throw err;
     }
-    const out = fs.mkdtempSync(path.join(work, "npm-"));
-    execFileSync("npm", ["pack", `${name}@${version}`, "--pack-destination", out], { stdio: "pipe" });
-    unpack(path.join(out, fs.readdirSync(out).find((f) => f.endsWith(".tgz"))), dest);
+    if (!packPublished(name, version, dest, work)) {
+      const previous = previousVersion(name, version);
+      if (!previous) return undefined;
+      console.log(`${name}: npm does not serve ${version} yet (just published?): comparing with ${previous}`);
+      if (!packPublished(name, previous, dest, work)) return undefined;
+    }
   }
   return JSON.parse(fs.readFileSync(path.join(dest, "package.json"), "utf8")).version;
 }

@@ -1,0 +1,60 @@
+#!/usr/bin/env node
+// A stand-in for the npm CLI, put first on PATH by tests. It answers the two commands
+// check-api-diff.mjs runs, from the registry described in the JSON file named by FAKE_NPM:
+//
+//   { "<name>": { "latest": "1.1.0",
+//                 "versions": { "1.0.0": "<package dir>", "1.1.0": "<package dir>" },
+//                 "missing": { "1.1.0": 2 },          // 404s before the tarball is served; -1: never
+//                 "error": { "1.1.0": "EACCES" } } }  // any other failure of `npm pack`
+//
+//   npm view <name>@latest version --json      → "<latest>"
+//   npm view <name> versions --json            → ["1.0.0", "1.1.0"]
+//   npm pack <name>@<version> --pack-destination <dir>
+//
+// Every `npm pack` is appended to FAKE_NPM + ".log", one "<name>@<version>" per line.
+import { execFileSync } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+const registry = JSON.parse(fs.readFileSync(process.env.FAKE_NPM, "utf8"));
+const args = process.argv.slice(2);
+const notFound = (what) => {
+  process.stderr.write(`npm error code E404\nnpm error 404 Not Found - GET https://registry.npmjs.org/${what} - Not found\n`);
+  process.exit(1);
+};
+const split = (spec) => {
+  const at = spec.lastIndexOf("@");
+  return at > 0 ? [spec.slice(0, at), spec.slice(at + 1)] : [spec, undefined];
+};
+
+if (args[0] === "view") {
+  const [name, version] = split(args[1]);
+  const pkg = registry[name];
+  if (!pkg) notFound(name);
+  if (args[2] === "versions") process.stdout.write(JSON.stringify(Object.keys(pkg.versions)));
+  else if (version === "latest") process.stdout.write(JSON.stringify(pkg.latest));
+  else process.exit(2);
+} else if (args[0] === "pack") {
+  const [name, version] = split(args[1]);
+  const dest = args[args.indexOf("--pack-destination") + 1];
+  fs.appendFileSync(`${process.env.FAKE_NPM}.log`, `${name}@${version}\n`);
+  const pkg = registry[name];
+  if (!pkg?.versions[version]) notFound(`${name}/-/${version}.tgz`);
+  if (pkg.error?.[version]) {
+    process.stderr.write(`npm error code ${pkg.error[version]}\nnpm error permission denied\n`);
+    process.exit(1);
+  }
+  const left = pkg.missing?.[version] ?? 0;
+  if (left !== 0) {
+    if (left > 0) pkg.missing[version] = left - 1;
+    fs.writeFileSync(process.env.FAKE_NPM, JSON.stringify(registry));
+    notFound(`${name}/-/${name.split("/").pop()}-${version}.tgz`);
+  }
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "fake-npm-"));
+  fs.cpSync(pkg.versions[version], path.join(tmp, "package"), { recursive: true });
+  execFileSync("tar", ["-czf", path.join(dest, `pkg-${version}.tgz`), "-C", tmp, "package"]);
+  fs.rmSync(tmp, { recursive: true, force: true });
+} else {
+  process.exit(2);
+}
