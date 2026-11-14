@@ -75,14 +75,15 @@ jobs:
               [ -e "$t" ] || continue
               id=$(tar -xzOf "$t" package/package.json | node -p "const p=JSON.parse(require('fs').readFileSync(0));p.name+'@'+p.version")
               found=false
-              for attempt in 1 2 3 4 5 6; do
+              for _ in 1 2 3 4 5 6; do
                 if npm view "$id" version >/dev/null 2>&1; then found=true; break; fi
                 sleep 10
               done
               if [ "$found" = true ]; then list="$list $id"; else echo "$id is not on npm: not announced"; fi
             done
           fi
-          echo "packages=$(echo $list)" >> "$GITHUB_OUTPUT"
+          list="${list# }"
+          echo "packages=$list" >> "$GITHUB_OUTPUT"
 
       - name: Release App configured
         id: app
