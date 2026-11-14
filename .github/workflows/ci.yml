@@ -14,7 +14,8 @@ name: CI
 # manifests carry no workspace:/catalog: specifiers). Root scripts that a
 # repository does not define are skipped, unless it opted into the required
 # baseline with the `baseline` input (library or app): then a missing required
-# script, or a test file no typecheck step compiles, fails the job.
+# script, or a test file no typecheck step compiles, fails the job. Opt-in too:
+# publint and attw (`package-checks`) and the API diff against npm (`api-diff`).
 
 on:
   workflow_call:
@@ -42,6 +43,20 @@ on:
           With library or app, tests must be typechecked too. Projects switch it on one by one.
         type: string
         default: "off"
+      package-checks:
+        description: Run publint and attw (Are the Types Wrong?) on every packed public package.
+        type: boolean
+        default: false
+      attw-profile:
+        description: The attw profile, `esm-only` (default), `node16` or `strict`.
+        type: string
+        default: esm-only
+      api-diff:
+        description: >-
+          Compare each public package's API with its version on npm, and fail a breaking change
+          that no changeset or version bump declares. Rolled out lowest layer first.
+        type: boolean
+        default: false
 
 jobs:
   ci:
@@ -111,3 +126,18 @@ jobs:
 
       - name: Packed manifests
         run: node "$RUNNER_TEMP/statewalker-ci/scripts/check-pack.mjs"
+
+      # publint, attw and TypeScript for the API diff: pinned by this repository's lockfile.
+      - name: Install the package check tools
+        if: inputs.package-checks || inputs.api-diff
+        run: pnpm install --frozen-lockfile --dir "$RUNNER_TEMP/statewalker-ci"
+
+      - name: publint and attw
+        if: inputs.package-checks
+        env:
+          ATTW_PROFILE: ${{ inputs.attw-profile }}
+        run: node "$RUNNER_TEMP/statewalker-ci/scripts/check-package-tools.mjs" --attw-profile "$ATTW_PROFILE"
+
+      - name: API diff against npm
+        if: inputs.api-diff
+        run: node "$RUNNER_TEMP/statewalker-ci/scripts/check-api-diff.mjs"
