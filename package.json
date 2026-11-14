@@ -10,6 +10,7 @@
     "@arethetypeswrong/cli": "0.18.5",
     "publint": "0.3.25",
     "typescript": "5.9.3",
+    "typescript-7": "npm:typescript@7.0.2",
     "yaml": "2.9.1"
   }
 }

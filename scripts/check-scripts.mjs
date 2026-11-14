@@ -129,9 +129,14 @@ function tsconfigsOf(script, dir, packageDirs = []) {
   return configs;
 }
 
-/** Run TypeScript's own CLI, resolved from the config's directory, on one config. */
+/**
+ * Run TypeScript's own CLI, resolved from the config's directory, on one config. The package root
+ * is found through `typescript/package.json`, which every version exports: TypeScript 7 does not
+ * export the `typescript/bin/tsc` subpath.
+ */
 function tsc(config, args) {
-  const bin = createRequire(path.join(path.dirname(config), "noop.js")).resolve("typescript/bin/tsc");
+  const pkg = createRequire(path.join(path.dirname(config), "noop.js")).resolve("typescript/package.json");
+  const bin = path.join(path.dirname(pkg), "bin", "tsc");
   return execFileSync(process.execPath, [bin, "-p", config, ...args], { encoding: "utf8", stdio: "pipe" });
 }
 
