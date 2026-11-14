@@ -1,0 +1,5 @@
+{
+  // JSONC, as tsconfig files usually are.
+  "extends": "./tsconfig.json",
+  "include": ["src", "test"],
+}
