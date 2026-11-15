@@ -166,7 +166,9 @@ try {
       if (a && b && line(a) !== line(b)) add(pkg.name, breaking(pkg.version), `${label} ${a} -> ${b}`);
       else add(pkg.name, "patch", a && b ? `${label} ${a} -> ${b}` : a ? `${label} removed` : `${label} ${b} added`);
     }
-    if (canonical(latest.exports) !== canonical(pkg.manifest.exports)) add(pkg.name, "patch", "exports changed");
+    // pnpm publishes publishConfig.exports in place of exports (source paths -> dist paths).
+    const exports = pkg.manifest.publishConfig?.exports ?? pkg.manifest.exports;
+    if (canonical(latest.exports) !== canonical(exports)) add(pkg.name, "patch", "exports changed");
 
     // Files.
     const dir = path.join(tmp, pkg.name.replace("/", "__"));

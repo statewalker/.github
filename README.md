@@ -233,7 +233,8 @@ request is opened; nothing is published, since `pack` and `publish` wait for it.
 would pack it and compared with npm's `latest`:
 
 - a packed file differs (sources, `dist/`, README, ...), or the published manifest does (runtime,
-  peer or optional dependencies, `exports`): **patch**;
+  peer or optional dependencies, `exports`, read from `publishConfig.exports` when the package
+  sets it, as pnpm publishes it): **patch**;
 - a dependency moved to another breaking line (`^0.3` to `^0.4`, `^1` to `^2`): **minor** on 0.x,
   **major** from 1.0; packages depending on it through `workspace:` get the same bump.
 
