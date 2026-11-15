@@ -212,12 +212,12 @@ function surface(consumer, name) {
       const members = new Set();
       if (target.flags & (ts.SymbolFlags.Interface | ts.SymbolFlags.Class)) {
         for (const p of checker.getPropertiesOfType(checker.getDeclaredTypeOfSymbol(target))) {
-          if (!isPrivate(p)) members.add(p.name);
+          if (!isPrivate(p)) members.add(memberName(p));
         }
       }
       if (target.flags & ts.SymbolFlags.Class) {
         for (const p of checker.getPropertiesOfType(checker.getTypeOfSymbol(target))) {
-          if (p.name !== "prototype" && !isPrivate(p)) members.add(`static ${p.name}`);
+          if (p.name !== "prototype" && !isPrivate(p)) members.add(`static ${memberName(p)}`);
         }
       }
       if (target.flags & ts.SymbolFlags.Enum) for (const key of target.exports?.keys() ?? []) members.add(String(key));
@@ -230,6 +230,23 @@ function surface(consumer, name) {
     api.set(entry, exports);
   }
   return api;
+}
+
+/**
+ * A member's name as both programs agree on it. TypeScript names a member keyed by a unique symbol
+ * `__@<name>@<symbol id>`, and the id depends on the order the program created its symbols, so the
+ * same member gets different names in the local and the published program. Such a member is written
+ * as its key expression in brackets, `[Symbol.asyncIterator]` or `[tag]`. It is recognised by its
+ * escaped name (TypeScript escapes a string name starting with `__` to `___...`, so a string property
+ * spelled `__@tag@12` cannot pass for one), and a string name starting with `[` is quoted, so `"[tag]"`
+ * stays distinct from the symbol key `[tag]`.
+ */
+function memberName(p) {
+  const symbolKey = /^__@(.+)@\d+$/.exec(String(p.escapedName));
+  if (!symbolKey) return p.name.startsWith("[") ? JSON.stringify(p.name) : p.name;
+  const name = ts.getNameOfDeclaration(p.valueDeclaration ?? p.declarations?.[0]);
+  if (name && ts.isComputedPropertyName(name)) return `[${name.expression.getText()}]`;
+  return `[${symbolKey[1]}]`;
 }
 
 /** Breaking changes and additions from the published API to the local one. */
