@@ -128,3 +128,6 @@ test("after a breaking release npm does not serve yet, a pull request's own brea
 
 test("a member keyed by a unique symbol is the same member in both programs", () =>
   passes("unique-symbol-member"));
+
+test("a symbol-keyed member replaced by a string key of the same spelling fails", () =>
+  fails("symbol-key-to-string-key", /removed member "Options\.\[tag\]"/));
