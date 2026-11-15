@@ -212,12 +212,12 @@ function surface(consumer, name) {
       const members = new Set();
       if (target.flags & (ts.SymbolFlags.Interface | ts.SymbolFlags.Class)) {
         for (const p of checker.getPropertiesOfType(checker.getDeclaredTypeOfSymbol(target))) {
-          if (!isPrivate(p)) members.add(p.name);
+          if (!isPrivate(p)) members.add(memberName(p));
         }
       }
       if (target.flags & ts.SymbolFlags.Class) {
         for (const p of checker.getPropertiesOfType(checker.getTypeOfSymbol(target))) {
-          if (p.name !== "prototype" && !isPrivate(p)) members.add(`static ${p.name}`);
+          if (p.name !== "prototype" && !isPrivate(p)) members.add(`static ${memberName(p)}`);
         }
       }
       if (target.flags & ts.SymbolFlags.Enum) for (const key of target.exports?.keys() ?? []) members.add(String(key));
@@ -230,6 +230,15 @@ function surface(consumer, name) {
     api.set(entry, exports);
   }
   return api;
+}
+
+/**
+ * A member's name as both programs agree on it. TypeScript names a member keyed by a unique symbol
+ * `__@<name>@<symbol id>`, and the id depends on the order the program created its symbols, so the
+ * same member gets different names in the local and the published program. Write it `[<name>]`.
+ */
+function memberName(p) {
+  return p.name.replace(/^__@(.+)@\d+$/, "[$1]");
 }
 
 /** Breaking changes and additions from the published API to the local one. */

@@ -125,3 +125,6 @@ test("after a breaking release npm does not serve yet, a pull request's own brea
   assert.match(r.out, /needs a major bump/);
   assert.match(r.out, /npm does not serve 1\.0\.0 yet/);
 });
+
+test("a member keyed by a unique symbol is the same member in both programs", () =>
+  passes("unique-symbol-member"));
